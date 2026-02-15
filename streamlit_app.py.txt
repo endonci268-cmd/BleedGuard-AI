@@ -1,0 +1,82 @@
+import streamlit as st
+import pandas as pd
+import joblib  # เพิ่มตัวโหลดโมเดล
+
+# --- 1. โหลดโมเดล LG ที่คุณเทรนไว้ ---
+@st.cache_resource # ใช้แคชเพื่อไม่ให้โหลดโมเดลซ้ำทุกครั้งที่กดปุ่ม
+def load_bleedguard_model():
+    return joblib.load('bleedguard_model.pkl')
+
+model = load_bleedguard_model()
+
+def bleedguard_triage_logic(row, threshold=0.5):
+    # 1. กฎ Override ความเสี่ยงต่ำ (De-escalation)
+    if row['Size_cm'] < 0.5 and row['BX'] == 1 and row['Cold Polypectomy'] == 0:
+        return "🟢 Low Risk (Normal Care)"
+
+    # 2. กฎ Override ความเสี่ยงสูง (Safety First)
+    if row['Clinical_Risk_Outcome'] == 1 or row['Size_cm'] >= 2.0 or row['EMR'] == 1:
+        return "🔴 High Risk (Intensive Follow-up)"
+
+    # 3. ใช้ผลจากโมเดล LG ตัดที่ Threshold 0.5
+    if row['Prob_Risk'] >= threshold:
+        return "🟡 Moderate Risk"
+    else:
+        return "🟢 Low Risk"
+
+st.set_page_config(layout="wide")
+st.title("BleedGuard AI Triage System (LG Edition)")
+
+# --- ส่วนรับข้อมูล (Input) ---
+# (ใช้ UI เดิมของคุณทั้งหมด)
+with st.expander("ข้อมูลพื้นฐานและหัตถการ"):
+    col1, col2, col3 = st.columns(3)
+    age = col1.number_input("Age", 0, 120, 60)
+    sex = 1 if col2.selectbox("Sex", ['M', 'F']) == 'M' else 0
+    size_cm = col3.number_input("Size_cm (ขนาดติ่งเนื้อ)", 0.0, 10.0, 1.0, 0.1)
+
+    col4, col5, col6 = st.columns(3)
+    loc_right = col4.selectbox("Loc_Right (ฝั่งขวา)", [0, 1])
+    med_risk = col5.selectbox("Med_Risk (ยา/โรคประจำตัว)", [0, 1])
+    surgery = col6.selectbox("Surgery (ประวัติผ่าตัด)", [0, 1])
+
+    col7, col8, col9 = st.columns(3)
+    bx = col7.selectbox("BX", [0, 1])
+    cold_p = col8.selectbox("Cold Polypectomy", [0, 1])
+    hot_p = col9.selectbox("Hot Polypectomy", [0, 1])
+    emr = st.selectbox("EMR", [0, 1])
+    
+    # สำหรับทดสอบกฎ Override
+    clip_decision = st.selectbox("Clinical_Risk_Outcome (แพทย์ติดคลิป?)", [0, 1])
+
+# --- การประมวลผล ---
+if st.button("ทำการคัดกรองด้วยโมเดล LG"):
+    # สร้าง DataFrame ให้ตรงกับที่โมเดลต้องการ (13 features) 
+    input_df = pd.DataFrame([{
+        'Age': age, 'Size_cm': size_cm, 'Loc_Right': loc_right, 'Med_Risk': med_risk,
+        'Surgery': surgery, 'Radiation': 0, 'Chemo': 0, 'BX': bx, 
+        'Cold Polypectomy': cold_p, 'Hot Polypectomy': hot_p, 'EMR': emr,
+        'Prob_Risk': 0, # ใส่ค่าหลอกไว้ก่อน
+        'Sex': sex
+    }])
+
+    # --- 2. ใช้โมเดลทำนายค่า Prob_Risk จริงๆ ---
+    # เราตัดคอลัมน์ Prob_Risk ออกก่อนทำนายเพราะมันเป็นผลลัพธ์ ไม่ใช่ปัจจัยนำเข้า
+    features_to_predict = input_df.drop(columns=['Prob_Risk'])
+    prob = model.predict_proba(features_to_predict)[0][1]
+    
+    # นำค่า Prob ที่ได้จากโมเดลกลับไปใส่ในข้อมูล
+    input_data_row = input_df.iloc[0].copy()
+    input_data_row['Prob_Risk'] = prob
+    input_data_row['Clinical_Risk_Outcome'] = clip_decision
+
+    # --- 3. ตัดสินใจตาม Hybrid Logic ---
+    triage_result = bleedguard_triage_logic(input_data_row, threshold=0.5)
+
+    # แสดงผล
+    st.subheader("ผลการคัดกรอง:")
+    if "🔴" in triage_result: st.error(triage_result)
+    elif "🟡" in triage_result: st.warning(triage_result)
+    else: st.success(triage_result)
+    
+    st.write(f"📊 ค่าความน่าจะเป็นจากโมเดล LG: **{prob:.4f}**")
