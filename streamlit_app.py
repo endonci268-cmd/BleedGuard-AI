@@ -132,7 +132,22 @@ with tab2:
 
         # --- Hourly Trend ---
         st.subheader("จำนวนเคสในแต่ละช่วงเวลา (Hourly Trend)")
-        trend_data = st.session_state.history.groupby('Hour').
-  
+        trend_data = st.session_state.history.groupby('Hour').size().reset_index(name='Count')
+        line = alt.Chart(trend_data).mark_line(point=True, color='#004d99').encode(x='Hour:O', y='Count:Q')
+        st.altair_chart(line, use_container_width=True)
+
+        st.divider()
+        st.dataframe(st.session_state.history.sort_index(ascending=False), use_container_width=True)
+        
+        if st.button("🗑️ ล้างข้อมูล Dashboard"):
+            st.session_state.history = pd.DataFrame(columns=['Date_Time', 'Age', 'Size_cm', 'Risk_Score', 'Result', 'Hour'])
+            st.rerun()
+    else:
+        st.info("ยังไม่มีข้อมูลการคัดกรองสำหรับวันนี้")
+
+st.divider()
+st.caption("GI Endoscopy Unit | National Cancer Institute")
+
+   
 
    
