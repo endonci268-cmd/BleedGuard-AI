@@ -19,13 +19,16 @@ def load_model():
 
 try:
     model = load_model()
-    # ปรับ Feature Names ให้ตรงตามที่โมเดล "Seen at fit time" ตาม Error เป๊ะๆ
-    # สังเกตว่าผมใส่ 'Prob_Risk' เพิ่มเข้าไปด้วยตามที่ Error ฟ้องว่า missing
-    model_features = [
-        'Age', 'Size_cm', 'Loc_Right', 'Med_Risk', 'Surgery', 
-        'Radiation', 'Chemo', 'BX', 'Cold Polypectomy', 'Hot Polypectomy', 
-        'EMR', 'Sex', 'Prob_Risk'
-    ]
+    # ดึงชื่อฟีเจอร์ "ของจริง" จากตัวโมเดลมาเลย เพื่อป้องกันการพิมพ์ผิด
+    if hasattr(model, 'feature_names_in_'):
+        model_features = model.feature_names_in_.tolist()
+    else:
+        # ถ้าดึงไม่ได้ ให้ใช้ชื่อตามที่ Error แจ้งมา (พยายามให้ตรงที่สุด)
+        model_features = [
+            'Age', 'Size_cm', 'Loc_Right', 'Med_Risk', 'Surgery', 
+            'Radiation', 'Chemo', 'BX', 'Cold Polypectomy', 'Hot Polypectomy', 
+            'EMR', 'Sex', 'Prob_Risk'
+        ]
 except Exception as e:
     st.error(f"❌ โหลดโมเดลไม่สำเร็จ: {e}")
 
@@ -79,32 +82,36 @@ with st.form("input_form"):
 
 # --- 8. ส่วนประมวลผล ---
 if submit:
-    # สร้าง Dictionary ข้อมูลเบื้องต้น
+    # สร้างข้อมูลดิบ
     input_data = {
-        'Age': age,
-        'Size_cm': size,
-        'Loc_Right': 1 if "ขวา" in loc else 0,
-        'Med_Risk': 1 if med == "มี" else 0,
-        'Surgery': 1 if surgery == "มี" else 0,
-        'Radiation': 1 if rad == "มี" else 0,
-        'Chemo': 1 if chemo == "มี" else 0,
-        'BX': 1 if "BX" in method else 0,
-        'Cold Polypectomy': 1 if "Cold" in method else 0,
-        'Hot Polypectomy': 1 if "Hot" in method else 0,
-        'EMR': 1 if "EMR" in method else 0,
-        'Sex': 1 if sex_input == "ชาย" else 0,
-        'Prob_Risk': 0 # ใส่ค่าเริ่มต้นให้ฟีเจอร์ที่โมเดลต้องการแต่เราไม่มีในฟอร์ม
+        'Age': age, 'Size_cm': size, 'Loc_Right': 1 if "ขวา" in loc else 0,
+        'Med_Risk': 1 if med == "มี" else 0, 'Surgery': 1 if surgery == "มี" else 0,
+        'Radiation': 1 if rad == "มี" else 0, 'Chemo': 1 if chemo == "มี" else 0,
+        'BX': 1 if "BX" in method else 0, 'Cold Polypectomy': 1 if "Cold" in method else 0,
+        'Hot Polypectomy': 1 if "Hot" in method else 0, 'EMR': 1 if "EMR" in method else 0,
+        'Sex': 1 if sex_input == "ชาย" else 0, 'Prob_Risk': 0
     }
     
-    # แปลงเป็น DataFrame และบังคับชื่อคอลัมน์ให้ตรงตาม model_features เป๊ะๆ
+    # แปลงเป็น DataFrame
     input_df = pd.DataFrame([input_data])
-    
-    # ตรวจสอบและจัดการชื่อคอลัมน์ (ตัดช่องว่างที่อาจแฝงอยู่)
-    input_df.columns = input_df.columns.str.strip()
-    input_df = input_df.reindex(columns=model_features, fill_value=0)
+
+    # --- จุดแก้ไขสำคัญ: การ Match ชื่อฟีเจอร์แบบยืดหยุ่น ---
+    final_df = pd.DataFrame(columns=model_features)
+    for col in model_features:
+        # พยายามหาชื่อที่ใกล้เคียงที่สุด (ตัดช่องว่างออกทั้งคู่แล้วเทียบกัน)
+        clean_col = col.strip()
+        matched = False
+        for raw_col in input_data.keys():
+            if raw_col.strip() == clean_col:
+                final_df[col] = [input_data[raw_col]]
+                matched = True
+                break
+        if not matched:
+            final_df[col] = [0] # ถ้าหาไม่เจอจริงๆ ให้เป็น 0
 
     try:
-        prob = model.predict_proba(input_df)[0][1]
+        # ทำนายผลด้วย DataFrame ที่ Match ชื่อเป๊ะๆ แล้ว
+        prob = model.predict_proba(final_df)[0][1]
         
         # Hybrid Decision Logic
         is_high = (size >= 2.0 or clip == "มี" or method == "EMR")
@@ -143,4 +150,4 @@ if submit:
 
     except Exception as e:
         st.error(f"Error during prediction: {e}")
-        st.write("ชื่อฟีเจอร์ที่ส่งให้โมเดล:", list(input_df.columns))
+        st.write("ฟีเจอร์ที่ระบบตรวจพบในโมเดล:", model_features)
