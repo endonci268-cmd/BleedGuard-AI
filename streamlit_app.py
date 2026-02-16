@@ -19,12 +19,11 @@ def load_model():
 
 try:
     model = load_model()
-    # เรียงลำดับ Feature ตามคอลัมน์ B-N ที่คุณให้มา (ตัด A=ID ออก)
-    # หมายเหตุ: คอลัมน์ M (Clinical_Risk_Outcome) ต้องใส่เข้าไปในโมเดลด้วยตามที่คุณแจ้ง
+    # ปรับชื่อลำดับที่ 11 (คอลัมน์ M) ให้เป็น 'Prob_Risk' ตามที่ AI ฟ้องขอมา
     model_features = [
         'Age', 'Size_cm', 'Loc_Right', 'Med_Risk', 'Surgery', 
         'Radiation', 'Chemo', 'BX', 'Cold Polypectomy', 'Hot Polypectomy', 
-        'EMR', 'Clinical_Risk_Outcome', 'Sex'
+        'EMR', 'Prob_Risk', 'Sex'
     ]
 except Exception as e:
     st.error(f"❌ โหลดโมเดลไม่สำเร็จ: {e}")
@@ -37,8 +36,8 @@ def get_thailand_time():
 # --- 5. ส่วนหัวโปรแกรม ---
 st.markdown("""
     <div style='text-align: center; background-color: #f0f2f6; padding: 20px; border-radius: 15px; margin-bottom: 20px;'>
-        <h2 style='color: #003366; margin-bottom: 0;'>🩺 NCI BleedGuard-AI</h2>
-        <p style='font-size: 1rem; color: #555;'>ระบบสนับสนุนการตัดสินใจ พัฒนาโดยพยาบาลส่องกล้อง สถาบันมะเร็งแห่งชาติ</p>
+        <h2 style='color: #003366; margin-bottom: 0;'>🩺 NCI BleedGuard-AI (Endo-STAT)</h2>
+        <p style='font-size: 1rem; color: #555;'>ระบบบริหารจัดการความเสี่ยงศูนย์ส่องกล้อง สถาบันมะเร็งแห่งชาติ</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -47,9 +46,9 @@ try:
     df_existing = conn.read(ttl=0)
     if df_existing is not None and not df_existing.empty:
         df_clean = df_existing.dropna(subset=['Final_Risk_Level']).copy()
-        st.subheader("📊 สถิติภาพรวมการคัดกรอง")
+        st.subheader("📊 สถิติภาพรวม")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("เคสสะสมทั้งหมด", f"{len(df_clean)} ราย")
+        m1.metric("เคสสะสม", f"{len(df_clean)} ราย")
         m2.metric("🔴 High", len(df_clean[df_clean['Final_Risk_Level'].str.contains('High', na=False)]))
         m3.metric("🟡 Moderate", len(df_clean[df_clean['Final_Risk_Level'].str.contains('Moderate', na=False)]))
         m4.metric("🟢 Low", len(df_clean[df_clean['Final_Risk_Level'].str.contains('Low', na=False)]))
@@ -79,11 +78,10 @@ with st.form("input_form"):
 
 # --- 8. ส่วนประมวลผล ---
 if submit:
-    # คำนวณค่า Clinical_Risk_Outcome (M) เบื้องต้นเพื่อส่งให้โมเดล
-    # อิงตามเกณฑ์พยาบาล: ถ้าขนาด >= 2 หรือ EMR หรือติดคลิป ให้เป็น 1 (เสี่ยง)
-    clin_outcome_val = 1 if (size >= 2.0 or clip == "มี" or method == "EMR") else 0
+    # คำนวณค่าความเสี่ยงทางคลินิกเพื่อส่งเป็นฟีเจอร์ Prob_Risk (คอลัมน์ M)
+    prob_risk_val = 1 if (size >= 2.0 or clip == "มี" or method == "EMR") else 0
 
-    # สร้าง Dictionary ตามลำดับฟีเจอร์ B-N
+    # จัดข้อมูลให้ตรงตามลำดับฟีเจอร์ที่โมเดลรู้จัก
     raw_input = {
         'Age': age,
         'Size_cm': size,
@@ -96,25 +94,25 @@ if submit:
         'Cold Polypectomy': 1 if "Cold" in method else 0,
         'Hot Polypectomy': 1 if "Hot" in method else 0,
         'EMR': 1 if "EMR" in method else 0,
-        'Clinical_Risk_Outcome': clin_outcome_val, # คอลัมน์ M
+        'Prob_Risk': prob_risk_val, # เปลี่ยนชื่อจาก Clinical_Risk_Outcome เป็น Prob_Risk
         'Sex': 1 if sex_input == "ชาย" else 0
     }
     
-    # บังคับสร้าง DataFrame เรียงลำดับตาม model_features เป๊ะๆ
+    # บังคับสร้าง DataFrame เรียงลำดับตามที่โมเดลจำได้เป๊ะๆ
     input_df = pd.DataFrame([raw_input])[model_features]
 
     try:
-        # ทำนายผล
+        # ทำนายผลจาก AI
         prob = model.predict_proba(input_df)[0][1]
         
-        # ตัดสินใจระดับความเสี่ยง (ใช้จุดตัด 0.05 เพื่อให้เห็นสีเหลืองตามที่คุณต้องการ)
-        if clin_outcome_val == 1 or prob >= 0.5:
+        # ตัดสินใจระดับความเสี่ยง (ใช้จุดตัด 0.05 เพื่อความภูมิใจในโมเดลและให้เห็นสีเหลือง)
+        if prob_risk_val == 1 or prob >= 0.5:
             res, col, ico, b_col = "🔴 High Risk", "#990000", "😫", "#FFD2D2"
-            adv = "**📋 แผนการพยาบาล:** ติดตามใกล้ชิด 24, 48, 72 ชม. และให้คำแนะนำกลับบ้านแบบเข้มงวด"
+            adv = "**📋 แผนการพยาบาล:** ติดตามใกล้ชิด 24, 48, 72 ชม. และให้คำแนะนำกลับบ้าน"
             st_func = st.error
         elif prob >= 0.05:
             res, col, ico, b_col = "🟡 Moderate Risk", "#827717", "😟", "#FFF9C4"
-            adv = "**📋 แผนการพยาบาล:** ติดตามอาการวันที่ 1, 3, 7 และให้คำแนะนำการสังเกตอาการ"
+            adv = "**📋 แผนการพยาบาล:** ติดตามอาการวันที่ 1, 3, 7 และสังเกตอาการผิดปกติ"
             st_func = st.warning
         else:
             res, col, ico, b_col = "🟢 Low Risk", "#006600", "😊", "#D2FFD2"
@@ -123,6 +121,7 @@ if submit:
 
         timestamp = get_thailand_time().strftime("%Y-%m-%d %H:%M:%S")
 
+        # แสดงผลค้างหน้าจอ
         st.write("---")
         st.markdown(f"""
             <div style="background-color: {b_col}; border: 2px solid {col}; padding: 30px; border-radius: 20px; text-align: center;">
@@ -141,4 +140,3 @@ if submit:
 
     except Exception as e:
         st.error(f"Error: {e}")
-        st.write("ฟีเจอร์ที่ส่งให้โมเดล:", list(input_df.columns))
