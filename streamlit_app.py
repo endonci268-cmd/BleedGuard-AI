@@ -136,5 +136,24 @@ if submit:
             "Clinical_Risk": clin_risk, "AI_Score": round(float(prob), 4),
             "Risk_Level": risk_text, "Method": method
         }])
-        updated_df = pd.concat([df_existing, new_data],
-   
+        updated_df = pd.concat([df_existing, new_data], ignore_index=True)
+        conn.update(data=updated_df)
+
+        # การแสดงผลลัพธ์ (ค้างหน้าจอ)
+        st.write("---")
+        st.markdown(f"""
+            <div style="background-color: {b_col}; border: 2px solid {color}; padding: 30px; border-radius: 20px; text-align: center;">
+                <div style="font-size: 80px;">{icon}</div>
+                <h1 style="color: {color}; margin: 10px 0;">{risk_text}</h1>
+                <p style="color: {color}; font-size: 1.2rem;">
+                    <b>AI Probability Score:</b> {prob:.4f} | <b>เวลาที่บันทึก:</b> {timestamp}
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.write("") 
+        st_func(advice)
+        st.info("💡 ข้อมูลถูกบันทึกลงระบบและ Dashboard เรียบร้อยแล้ว")
+
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการประมวลผล: {e}")
