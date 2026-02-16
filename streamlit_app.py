@@ -19,8 +19,7 @@ def load_model():
 
 try:
     model = load_model()
-    # นี่คือลำดับที่ถูกต้องที่สุดอิงจาก Error Message ของคุณครับ
-    # ต้องเรียงตามนี้เป๊ะๆ AI ถึงจะยอมอ่าน
+    # ลำดับฟีเจอร์ที่โมเดลต้องการ (อิงจากลำดับ A-N ที่คุณให้มา)
     model_features = [
         'Age', 'Size_cm', 'Loc_Right', 'Med_Risk', 'Surgery', 
         'Radiation', 'Chemo', 'BX', 'Cold Polypectomy', 'Hot Polypectomy', 
@@ -66,49 +65,48 @@ with st.form("input_form"):
         age = st.number_input("อายุ (ปี)", 1, 120, 60)
         sex_input = st.radio("เพศ", ["ชาย", "หญิง"], horizontal=True)
         size = st.number_input("ขนาดติ่งเนื้อ (cm)", 0.1, 10.0, 1.0, step=0.1)
-        loc = st.selectbox("ตำแหน่ง", ["ขวา (Right)", "ซ้าย (Left)"])
-        med = st.radio("ยากลุ่มเสี่ยง", ["ไม่มี", "มี"], horizontal=True)
+        loc_input = st.selectbox("ตำแหน่ง", ["ขวา (Right)", "ซ้าย (Left)"])
+        med_input = st.radio("ยากลุ่มเสี่ยง", ["ไม่มี", "มี"], horizontal=True)
     with c2:
-        rad = st.radio("ประวัติฉายแสง", ["ไม่มี", "มี"], horizontal=True)
-        chemo = st.radio("ประวัติเคมีบำบัด", ["ไม่มี", "มี"], horizontal=True)
-        surgery = st.radio("ประวัติผ่าตัดช่องท้อง", ["ไม่มี", "มี"], horizontal=True)
-        method = st.selectbox("หัตถการ", ["Biopsy (BX)", "Cold Polypectomy", "Hot Polypectomy", "EMR"])
-        clip = st.radio("มีการติดคลิป", ["ไม่มี", "มี"], horizontal=True)
+        rad_input = st.radio("ประวัติฉายแสง", ["ไม่มี", "มี"], horizontal=True)
+        chemo_input = st.radio("ประวัติเคมีบำบัด", ["ไม่มี", "มี"], horizontal=True)
+        surgery_input = st.radio("ประวัติผ่าตัดช่องท้อง", ["ไม่มี", "มี"], horizontal=True)
+        method_input = st.selectbox("หัตถการ", ["Biopsy (BX)", "Cold Polypectomy", "Hot Polypectomy", "EMR"])
+        clip_input = st.radio("มีการติดคลิป", ["ไม่มี", "มี"], horizontal=True)
     
     submit = st.form_submit_button("📊 ประมวลผลและบันทึกข้อมูล", use_container_width=True)
 
 # --- 8. ส่วนประมวลผล ---
 if submit:
-    # 1. คำนวณค่า Prob_Risk (คอลัมน์ M) ตามเกณฑ์ทางคลินิก
-    prob_risk_val = 1 if (size >= 2.0 or clip == "มี" or method == "EMR") else 0
+    # 1. สร้างค่าตัวแปรในรูปแบบที่ AI เข้าใจ (บังคับเป็น float หรือ int)
+    prob_risk_val = 1.0 if (size >= 2.0 or clip_input == "มี" or method_input == "EMR") else 0.0
 
-    # 2. เก็บข้อมูลลงใน Dictionary เบื้องต้น
     raw_data = {
-        'Age': age,
-        'Size_cm': size,
-        'Loc_Right': 1 if "ขวา" in loc else 0,
-        'Med_Risk': 1 if med == "มี" else 0,
-        'Surgery': 1 if surgery == "มี" else 0,
-        'Radiation': 1 if rad == "มี" else 0,
-        'Chemo': 1 if chemo == "มี" else 0,
-        'BX': 1 if "BX" in method else 0,
-        'Cold Polypectomy': 1 if "Cold" in method else 0,
-        'Hot Polypectomy': 1 if "Hot" in method else 0,
-        'EMR': 1 if "EMR" in method else 0,
-        'Prob_Risk': prob_risk_val,
-        'Sex': 1 if sex_input == "ชาย" else 0
+        'Age': float(age),
+        'Size_cm': float(size),
+        'Loc_Right': 1.0 if "ขวา" in loc_input else 0.0,
+        'Med_Risk': 1.0 if med_input == "มี" else 0.0,
+        'Surgery': 1.0 if surgery_input == "มี" else 0.0,
+        'Radiation': 1.0 if rad_input == "มี" else 0.0,
+        'Chemo': 1.0 if chemo_input == "มี" else 0.0,
+        'BX': 1.0 if "BX" in method_input else 0.0,
+        'Cold Polypectomy': 1.0 if "Cold" in method_input else 0.0,
+        'Hot Polypectomy': 1.0 if "Hot" in method_input else 0.0,
+        'EMR': 1.0 if "EMR" in method_input else 0.0,
+        'Prob_Risk': float(prob_risk_val),
+        'Sex': 1.0 if sex_input == "ชาย" else 0.0
     }
     
-    # 3. สร้าง DataFrame และ "บังคับลำดับคอลัมน์" ให้ตรงตาม model_features เป๊ะๆ
+    # 2. บังคับสร้าง DataFrame และจัดลำดับคอลัมน์ให้ตรงตาม model_features เป๊ะๆ
     input_df = pd.DataFrame([raw_data])
-    input_df = input_df[model_features] # บรรทัดนี้คือการจัดลำดับครับ
+    input_df = input_df[model_features] # บรรทัดนี้คือการจัดลำดับ
 
     try:
-        # ทำนายผล
+        # 3. ทำนายผล
         prob = model.predict_proba(input_df)[0][1]
         
-        # ตัดสินใจระดับความเสี่ยง (ใช้จุดตัด 0.05 เพื่อให้เห็นสีเหลือง 😟)
-        if prob_risk_val == 1 or prob >= 0.5:
+        # Logic แบ่งสี (จุดตัด 0.05 เพื่อให้เห็นหน้าเหลือง 😟)
+        if prob_risk_val == 1.0 or prob >= 0.5:
             res, col, ico, b_col = "🔴 High Risk", "#990000", "😫", "#FFD2D2"
             adv = "**📋 แผนการพยาบาล:** ติดตามใกล้ชิด 24, 48, 72 ชม. และให้คำแนะนำกลับบ้านแบบเข้มงวด"
             st_func = st.error
@@ -133,8 +131,8 @@ if submit:
         """, unsafe_allow_html=True)
         st_func(adv)
         
-        # อัปเดต Google Sheets
-        new_row = pd.DataFrame([{"Timestamp": timestamp, "Final_Risk_Level": res, "AI_Score": prob, "Method": method}])
+        # 4. บันทึกลง Google Sheets
+        new_row = pd.DataFrame([{"Timestamp": timestamp, "Final_Risk_Level": res, "AI_Score": prob, "Method": method_input}])
         df_all = pd.concat([df_existing, new_row], ignore_index=True)
         conn.update(data=df_all)
         st.info("💡 ข้อมูลถูกบันทึกเรียบร้อยแล้ว")
