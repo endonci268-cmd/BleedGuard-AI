@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import joblib
+import numpy as np
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
 from datetime import datetime
@@ -19,12 +20,6 @@ def load_model():
 
 try:
     model = load_model()
-    # ลำดับฟีเจอร์ที่โมเดลต้องการ (อิงจากลำดับ A-N ที่คุณให้มา)
-    model_features = [
-        'Age', 'Size_cm', 'Loc_Right', 'Med_Risk', 'Surgery', 
-        'Radiation', 'Chemo', 'BX', 'Cold Polypectomy', 'Hot Polypectomy', 
-        'EMR', 'Prob_Risk', 'Sex'
-    ]
 except Exception as e:
     st.error(f"❌ โหลดโมเดลไม่สำเร็จ: {e}")
 
@@ -78,34 +73,35 @@ with st.form("input_form"):
 
 # --- 8. ส่วนประมวลผล ---
 if submit:
-    # 1. สร้างค่าตัวแปรในรูปแบบที่ AI เข้าใจ (บังคับเป็น float หรือ int)
+    # 1. เตรียมค่าตัวเลขตามลำดับ A-N (M=Prob_Risk)
+    # ลำดับ: Age, Size_cm, Loc_Right, Med_Risk, Surgery, Radiation, Chemo, BX, Cold Poly, Hot Poly, EMR, Prob_Risk, Sex
+    
     prob_risk_val = 1.0 if (size >= 2.0 or clip_input == "มี" or method_input == "EMR") else 0.0
 
-    raw_data = {
-        'Age': float(age),
-        'Size_cm': float(size),
-        'Loc_Right': 1.0 if "ขวา" in loc_input else 0.0,
-        'Med_Risk': 1.0 if med_input == "มี" else 0.0,
-        'Surgery': 1.0 if surgery_input == "มี" else 0.0,
-        'Radiation': 1.0 if rad_input == "มี" else 0.0,
-        'Chemo': 1.0 if chemo_input == "มี" else 0.0,
-        'BX': 1.0 if "BX" in method_input else 0.0,
-        'Cold Polypectomy': 1.0 if "Cold" in method_input else 0.0,
-        'Hot Polypectomy': 1.0 if "Hot" in method_input else 0.0,
-        'EMR': 1.0 if "EMR" in method_input else 0.0,
-        'Prob_Risk': float(prob_risk_val),
-        'Sex': 1.0 if sex_input == "ชาย" else 0.0
-    }
+    features = [
+        float(age),                                # B: Age
+        float(size),                               # C: Size_cm
+        1.0 if "ขวา" in loc_input else 0.0,         # D: Loc_Right
+        1.0 if med_input == "มี" else 0.0,          # E: Med_Risk
+        1.0 if surgery_input == "มี" else 0.0,      # F: Surgery
+        1.0 if rad_input == "มี" else 0.0,          # G: Radiation
+        1.0 if chemo_input == "มี" else 0.0,        # H: Chemo
+        1.0 if "BX" in method_input else 0.0,       # I: BX
+        1.0 if "Cold" in method_input else 0.0,     # J: Cold Polypectomy
+        1.0 if "Hot" in method_input else 0.0,      # K: Hot Polypectomy
+        1.0 if "EMR" in method_input else 0.0,      # L: EMR
+        float(prob_risk_val),                       # M: Prob_Risk (สำคัญมาก)
+        1.0 if sex_input == "ชาย" else 0.0          # N: Sex
+    ]
     
-    # 2. บังคับสร้าง DataFrame และจัดลำดับคอลัมน์ให้ตรงตาม model_features เป๊ะๆ
-    input_df = pd.DataFrame([raw_data])
-    input_df = input_df[model_features] # บรรทัดนี้คือการจัดลำดับ
+    # แปลงเป็น Numpy Array และ Reshape ให้เป็น 1 แถว หลายคอลัมน์ (ข้ามการเช็คชื่อฟีเจอร์)
+    input_array = np.array(features).reshape(1, -1)
 
     try:
-        # 3. ทำนายผล
-        prob = model.predict_proba(input_df)[0][1]
+        # 2. ทำนายผล (ส่งเป็นค่าตัวเลขล้วนๆ)
+        prob = model.predict_proba(input_array)[0][1]
         
-        # Logic แบ่งสี (จุดตัด 0.05 เพื่อให้เห็นหน้าเหลือง 😟)
+        # 3. ตัดสินใจระดับความเสี่ยง (ใช้จุดตัด 0.05 เพื่อให้เห็นหน้าเหลือง 😟)
         if prob_risk_val == 1.0 or prob >= 0.5:
             res, col, ico, b_col = "🔴 High Risk", "#990000", "😫", "#FFD2D2"
             adv = "**📋 แผนการพยาบาล:** ติดตามใกล้ชิด 24, 48, 72 ชม. และให้คำแนะนำกลับบ้านแบบเข้มงวด"
@@ -135,7 +131,7 @@ if submit:
         new_row = pd.DataFrame([{"Timestamp": timestamp, "Final_Risk_Level": res, "AI_Score": prob, "Method": method_input}])
         df_all = pd.concat([df_existing, new_row], ignore_index=True)
         conn.update(data=df_all)
-        st.info("💡 ข้อมูลถูกบันทึกเรียบร้อยแล้ว")
+        st.info("💡 บันทึกข้อมูลเรียบร้อยแล้ว")
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error during prediction: {e}")
