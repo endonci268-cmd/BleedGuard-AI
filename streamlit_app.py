@@ -19,13 +19,13 @@ def load_model():
 
 try:
     model = load_model()
-    # ชื่อคอลัมน์ต้องตรงตามรูป Header ที่ส่งมาเป๊ะๆ
+    # ปรับชื่อฟีเจอร์ให้ตรงตามที่โมเดล "Seen at fit time" ตาม Error Message เป๊ะๆ
     model_features = [
         'Age', 'Size_cm', 'Loc_Right', 'Med_Risk', 'Surgery', 
-        'Radiation', 'Chemo', 'BX', 'Cold Polyp', 'Hot Polype', 'EMR', 'Sex'
+        'Radiation', 'Chemo', 'BX', 'Cold Polypectomy', 'Hot Polypectomy', 'EMR', 'Sex'
     ]
-except:
-    st.error("❌ ไม่พบไฟล์โมเดล bleedguard_model.pkl")
+except Exception as e:
+    st.error(f"❌ ไม่สามารถโหลดโมเดลได้: {e}")
 
 # --- 4. ฟังก์ชันดึงเวลาไทย ---
 def get_thailand_time():
@@ -35,12 +35,12 @@ def get_thailand_time():
 # --- 5. ส่วนหัวโปรแกรม ---
 st.markdown("""
     <div style='text-align: center; background-color: #f0f2f6; padding: 20px; border-radius: 15px; margin-bottom: 20px;'>
-        <h2 style='color: #003366; margin-bottom: 0;'>🩺 NCI BleedGuard-AI Dashboard</h2>
-        <p style='font-size: 1rem; color: #555;'>ระบบบริหารจัดการความเสี่ยงศูนย์ส่องกล้อง สถาบันมะเร็งแห่งชาติ</p>
+        <h2 style='color: #003366; margin-bottom: 0;'>🩺 NCI BleedGuard-AI</h2>
+        <p style='font-size: 1rem; color: #555;'>ระบบสนับสนุนการตัดสินใจ พัฒนาโดยพยาบาลส่องกล้อง สถาบันมะเร็งแห่งชาติ</p>
     </div>
 """, unsafe_allow_html=True)
 
-# --- 6. แดชบอร์ด (Dashboard) เอากลับมาแล้วและกางออกอัตโนมัติ ---
+# --- 6. แดชบอร์ด (Dashboard) ---
 try:
     df_existing = conn.read(ttl=0)
     if df_existing is not None and not df_existing.empty:
@@ -49,30 +49,11 @@ try:
         st.subheader("📊 สถิติภาพรวมการคัดกรอง")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("เคสสะสมทั้งหมด", f"{len(df_clean)} ราย")
-        
-        red_c = len(df_clean[df_clean['Clinical_Risk'].str.contains('High', na=False)])
-        m2.metric("🔴 High Risk", f"{red_c} ราย")
-        
-        yel_c = len(df_clean[df_clean['Clinical_Risk'].str.contains('Moderate', na=False)])
-        m3.metric("🟡 Moderate Risk", f"{yel_c} ราย")
-        
-        gre_c = len(df_clean[df_clean['Clinical_Risk'].str.contains('Low', na=False)])
-        m4.metric("🟢 Low Risk", f"{gre_c} ราย")
-
-        g1, g2 = st.columns(2)
-        with g1:
-            fig_pie = px.pie(df_clean, names='Clinical_Risk', 
-                             color='Clinical_Risk',
-                             color_discrete_map={'🔴 High Risk':'#FF4B4B', '🟡 Moderate Risk':'#FBC02D', '🟢 Low Risk':'#00CC96'},
-                             hole=0.4, title="สัดส่วนความเสี่ยงคนไข้")
-            st.plotly_chart(fig_pie, use_container_width=True)
-        with g2:
-            fig_bar = px.bar(df_clean, x='Method', color='Clinical_Risk',
-                             color_discrete_map={'🔴 High Risk':'#FF4B4B', '🟡 Moderate Risk':'#FBC02D', '🟢 Low Risk':'#00CC96'},
-                             title="จำนวนหัตถการแยกตามระดับความเสี่ยง")
-            st.plotly_chart(fig_bar, use_container_width=True)
+        m2.metric("🔴 High Risk", len(df_clean[df_clean['Clinical_Risk'].str.contains('High', na=False)]))
+        m3.metric("🟡 Moderate Risk", len(df_clean[df_clean['Clinical_Risk'].str.contains('Moderate', na=False)]))
+        m4.metric("🟢 Low Risk", len(df_clean[df_clean['Clinical_Risk'].str.contains('Low', na=False)]))
     else:
-        st.info("💡 ยังไม่มีข้อมูลในระบบ เริ่มบันทึกข้อมูลเพื่อสร้าง Dashboard")
+        df_existing = pd.DataFrame()
 except:
     df_existing = pd.DataFrame()
 
@@ -99,13 +80,19 @@ with st.form("input_form"):
 
 # --- 8. ส่วนประมวลผล ---
 if submit:
-    # เตรียมข้อมูลตามรูป Header
+    # แมปข้อมูลให้ชื่อตรงกับโมเดล (ใช้ชื่อเต็มตาม Error Message)
     input_data = {
-        'Age': age, 'Size_cm': size, 'Loc_Right': 1 if "ขวา" in loc else 0,
-        'Med_Risk': 1 if med == "มี" else 0, 'Surgery': 1 if surgery == "มี" else 0,
-        'Radiation': 1 if rad == "มี" else 0, 'Chemo': 1 if chemo == "มี" else 0,
-        'BX': 1 if "BX" in method else 0, 'Cold Polyp': 1 if "Cold" in method else 0,
-        'Hot Polype': 1 if "Hot" in method else 0, 'EMR': 1 if "EMR" in method else 0,
+        'Age': age,
+        'Size_cm': size,
+        'Loc_Right': 1 if "ขวา" in loc else 0,
+        'Med_Risk': 1 if med == "มี" else 0,
+        'Surgery': 1 if surgery == "มี" else 0,
+        'Radiation': 1 if rad == "มี" else 0,
+        'Chemo': 1 if chemo == "มี" else 0,
+        'BX': 1 if "BX" in method else 0,
+        'Cold Polypectomy': 1 if "Cold" in method else 0, # แก้ให้เป็นชื่อเต็ม
+        'Hot Polypectomy': 1 if "Hot" in method else 0,  # แก้ให้เป็นชื่อเต็ม
+        'EMR': 1 if "EMR" in method else 0,
         'Sex': 1 if sex_input == "ชาย" else 0
     }
     
@@ -114,7 +101,7 @@ if submit:
     try:
         prob = model.predict_proba(input_df)[0][1]
         
-        # กฎเกณฑ์ทางคลินิก + AI
+        # Hybrid Decision: Clinical + AI
         is_high = (size >= 2.0 or clip == "มี" or method == "EMR")
         is_mod = (med == "มี" or rad == "มี" or chemo == "มี" or surgery == "มี" or age >= 75)
 
@@ -133,12 +120,6 @@ if submit:
 
         timestamp = get_thailand_time().strftime("%Y-%m-%d %H:%M:%S")
 
-        # บันทึกลง Sheets
-        new_row = pd.DataFrame([{
-            "Timestamp": timestamp, "Age": age, "Size_cm": size, "Med_Risk": med,
-            "Clinical_Risk": res, "AI_Score": round(float(prob), 4), "Method": method
-        }])
-        
         # แสดงผลค้างหน้าจอ
         st.write("---")
         st.markdown(f"""
@@ -150,10 +131,11 @@ if submit:
         """, unsafe_allow_html=True)
         st_func(adv)
         
-        # อัปเดต Google Sheets
+        # อัปเดต Google Sheets (บันทึกข้อมูลเพื่อใช้ใน Dashboard ครั้งหน้า)
+        new_row = pd.DataFrame([{"Timestamp": timestamp, "Clinical_Risk": res, "AI_Score": prob, "Method": method}])
         df_all = pd.concat([df_existing, new_row], ignore_index=True)
         conn.update(data=df_all)
-        st.info("💡 บันทึกข้อมูลและอัปเดตสถิติเรียบร้อยแล้ว")
+        st.info("💡 ข้อมูลถูกบันทึกเรียบร้อยแล้ว")
 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error during prediction: {e}")
