@@ -1,153 +1,125 @@
 import streamlit as st
 import pandas as pd
 import joblib
-import altair as alt
-from datetime import datetime
+import numpy as np
+from streamlit_gsheets import GSheetsConnection
 
-# --- 1. การตั้งค่าหน้าตาแอป (Mobile & Dark Mode Optimized) ---
-st.set_page_config(page_title="BleedGuard-AI | NCI", page_icon="🩺", layout="centered")
+# --- 1. การตั้งค่าหน้าจอให้ Responsive ---
+st.set_page_config(
+    layout="centered", # ใช้ Centered จะดูง่ายกว่าบนมือถือ
+    page_title="NCI BleedGuard-AI",
+    page_icon="🩺"
+)
 
-if 'history' not in st.session_state:
-    st.session_state.history = pd.DataFrame(columns=['Date_Time', 'Age', 'Size_cm', 'Risk_Score', 'Result', 'Hour'])
+# --- 2. การเชื่อมต่อ Google Sheets ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# ตกแต่ง CSS เน้นตัวหนังสือใหญ่พิเศษและสู้ Dark Mode
-st.markdown("""
-    <style>
-    html, body, [class*="st-"] { font-size: 20px !important; }
-    .main { background-color: #f1f5f9; }
-    
-    /* หัวข้อหลัก */
-    .title-nci { color: #004d99; font-weight: 800; text-align: center; font-size: 26px; line-height: 1.2; }
-    .subtitle-nci { color: #64748b; text-align: center; font-size: 18px; margin-bottom: 10px; }
-    
-    /* กล่องผลลัพธ์บังคับพื้นหลังขาว (High Contrast) */
-    .result-card {
-        padding: 25px;
-        border-radius: 20px;
-        background-color: #ffffff !important;
-        color: #1e293b !important;
-        border: 3px solid #004d99;
-        margin-top: 20px;
-    }
-    
-    /* ขนาดตัวอักษรระดับความเสี่ยง (ใหญ่พิเศษ) */
-    .red-xl { color: #b91c1c !important; font-weight: 900; font-size: 38px; text-align: center; }
-    .yellow-xl { color: #854d0e !important; font-weight: 900; font-size: 38px; text-align: center; }
-    .green-xl { color: #15803d !important; font-weight: 900; font-size: 38px; text-align: center; }
-    
-    .stButton>button {
-        width: 100%; border-radius: 15px; height: 4.5em; background-color: #004d99; color: white; font-weight: bold; font-size: 24px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 2. โหลดโมเดล LG ---
+# --- 3. โหลดโมเดล AI ---
 @st.cache_resource
 def load_model():
     return joblib.load('bleedguard_model.pkl')
 
-model = load_model()
+try:
+    model = load_model()
+except:
+    st.error("ไม่พบไฟล์โมเดลบน GitHub")
 
-# --- 3. ตรรกะการตัดสินใจและเนื้อหาแนะนำ ---
-def get_triage_details(row, threshold=0.5):
-    if row['Clinical_Risk_Outcome'] == 1 or row['Size_cm '] >= 2.0 or row['EMR'] == 1:
-        return {"title": "🔴 ความเสี่ยงสูง (High Risk)", "class": "red-xl", 
-                "follow_up": "📌 ติดตาม: 24, 48, 72 ชม.", "diet": "🥣 อาหาร: Clear Liquid 24 ชม. แรก / งดกากใย 3 วัน", 
-                "activity": "🚶 กิจกรรม: งดออกกำลัง/ยกของหนัก 7-14 วัน"}
-    if row['Prob_Risk'] >= threshold:
-        return {"title": "🟡 ความเสี่ยงปานกลาง (Moderate Risk)", "class": "yellow-xl", 
-                "follow_up": "📌 ติดตาม: วันที่ 1, 3 และ 7", "diet": "🍚 อาหาร: อาหารอ่อนย่อยง่าย 2-3 วัน งดของเผ็ด/แอลกอฮอล์", 
-                "activity": "🚶 กิจกรรม: งดกิจกรรมเกร็งหน้าท้อง 5-7 วัน"}
-    return {"title": "🟢 ความเสี่ยงต่ำ (Low Risk)", "class": "green-xl", 
-            "follow_up": "📌 ติดตาม: สังเกตอาการตนเองตามมาตรฐาน", "diet": "🍲 อาหาร: ทานปกติ เลี่ยงอาหารท้องผูก", 
-            "activity": "🚶 กิจกรรม: ปกติ งดออกกำลังหนัก 1-2 วัน"}
+# --- 4. ส่วนหัวโปรแกรม (ออกแบบให้ตัวอักษรพอดีกับมือถือ) ---
+st.markdown("""
+    <div style='text-align: center; background-color: #f0f2f6; padding: 20px; border-radius: 15px; margin-bottom: 20px;'>
+        <h2 style='color: #003366; margin-bottom: 0;'>🩺 NCI BleedGuard-AI</h2>
+        <p style='font-size: 0.9rem; color: #555;'>ระบบคัดกรองความเสี่ยงภาวะเลือดออกหลังตัดติ่งเนื้อ<br>
+        <b>National Cancer Institute, Thailand</b></p>
+    </div>
+""", unsafe_allow_html=True)
 
-# --- 4. ส่วนหัวแอป ---
-st.markdown("<div class='title-nci'>BleedGuard-AI</div>", unsafe_allow_html=True)
-st.markdown("<div class='subtitle-nci'>ระบบอัจฉริยะคัดกรองความเสี่ยงภาวะเลือดออกหลังส่องกล้องลำไส้ใหญ่และตัดติ่งเนื้อ<br>ศูนย์ส่องกล้องทางเดินอาหาร สถาบันมะเร็งแห่งชาติ</div>", unsafe_allow_html=True)
+# --- 5. แดชบอร์ดสรุปผล (ใช้ Expander เพื่อประหยัดพื้นที่บนมือถือ) ---
+with st.expander("📊 ดูสถิติภาพรวม (Dashboard)", expanded=False):
+    try:
+        df_existing = conn.read(ttl=0)
+        if not df_existing.empty:
+            # ใช้ columns แบบ 2x2 บนมือถือ
+            red_c = len(df_existing[df_existing['Risk_Level'].str.contains('High', na=False)])
+            yellow_c = len(df_existing[df_existing['Risk_Level'].str.contains('Moderate', na=False)])
+            green_c = len(df_existing[df_existing['Risk_Level'].str.contains('Low', na=False)])
 
-tab1, tab2 = st.tabs(["🩺 คัดกรอง (Triage)", "📊 แดชบอร์ด (Dashboard)"])
+            col_m1, col_m2 = st.columns(2)
+            col_m1.metric("เคสทั้งหมด", len(df_existing))
+            col_m1.metric("🔴 High", red_c)
+            col_m2.metric("🟡 Moderate", yellow_c)
+            col_m2.metric("🟢 Low", green_c)
+        else:
+            st.info("ยังไม่มีข้อมูลในระบบ")
+            df_existing = pd.DataFrame()
+    except:
+        st.caption("กำลังเชื่อมต่อฐานข้อมูล...")
+        df_existing = pd.DataFrame()
 
-with tab1:
-    st.markdown("### 📝 ข้อมูลพื้นฐาน & ปัจจัยเสี่ยง")
-    age = st.number_input("อายุ (Age)", 0, 120, 60)
-    size_cm = st.number_input("ขนาดติ่งเนื้อ (Size in cm)", 0.0, 10.0, 1.0, step=0.1)
+# --- 6. ส่วนการกรอกข้อมูล (เน้นกดง่ายบนมือถือ) ---
+st.subheader("📝 บันทึกข้อมูลรายใหม่")
+with st.form("mobile_form"):
+    # เรียงลงมาเป็นแนวตั้งเพื่อให้กรอกง่ายในมือถือ
+    age = st.number_input("อายุ / Age", 1, 120, 60)
+    sex = st.radio("เพศ / Sex", ["ชาย (Male)", "หญิง (Female)"], horizontal=True)
+    size = st.number_input("ขนาดติ่งเนื้อ / Size (cm)", 0.1, 10.0, 1.0, 0.1)
+    loc = st.selectbox("ตำแหน่งติ่งเนื้อ / Location", ["ลำไส้ฝั่งขวา (Right)", "ลำไส้ฝั่งซ้าย (Left)"])
+    med = st.radio("ยากลุ่มเสี่ยง / High-Risk Meds", ["ไม่มี", "มี"], horizontal=True)
     
-    col1, col2 = st.columns(2)
-    med = col1.checkbox("ยาละลายลิ่มเลือด/โรคประจำตัว")
-    rad = col2.checkbox("เคยฉายแสง (Radiation)")
-    chemo = col1.checkbox("เคยรับเคมีบำบัด (Chemo)")
-    surg = col2.checkbox("ประวัติผ่าตัดช่องท้อง")
-    loc = col1.checkbox("ตำแหน่งฝั่งขวา (Right Side)")
-    clip = col2.checkbox("แพทย์ติดคลิป/เสี่ยงหน้างาน")
+    st.divider() # เส้นคั่นเพื่อให้ดูไม่รก
     
-    st.markdown("### ✂️ ประเภทหัตถการ")
-    bx = st.checkbox("BX")
-    cp = st.checkbox("Cold Poly")
-    hp = st.checkbox("Hot Poly")
-    emr = st.checkbox("EMR")
+    rad = st.radio("ประวัติการฉายแสง / Radiation", ["ไม่มี", "มี"], horizontal=True)
+    chemo = st.radio("ประวัติเคมีบำบัด / Chemo", ["ไม่มี", "มี"], horizontal=True)
+    method = st.selectbox("หัตถการ / Procedure", ["Biopsy (BX)", "Cold Polypectomy", "Hot Polypectomy", "EMR"])
+    clip = st.radio("การติดคลิป / Hemoclip", ["ไม่มี", "มี"], horizontal=True)
 
-    if st.button("🚀 วิเคราะห์ผลการคัดกรอง"):
-        p_feat = ((age/100*0.2) + (1 if med else 0)*0.3 + (1 if loc else 0)*0.1 + (1 if surg else 0)*0.1 + (1 if rad else 0)*0.05 + (1 if chemo else 0)*0.05 + (1 if hp else 0)*0.1)
-        input_df = pd.DataFrame([{'Age': age, 'Size_cm ': size_cm, 'Loc_Right ': 1 if loc else 0, 'Med_Risk ': 1 if med else 0, 'Surgery ': 1 if surg else 0, 'Radiation': 1 if rad else 0, 'Chemo': 1 if chemo else 0, 'BX': 1 if bx else 0, 'Cold Polypectomy': 1 if cp else 0, 'Hot Polypectomy': 1 if hp else 0, 'EMR': 1 if emr else 0, 'Prob_Risk': p_feat, 'Sex': 1}])
-        
-        prob_ai = model.predict_proba(input_df)[0][1]
-        row_final = input_df.iloc[0].copy()
-        row_final['Prob_Risk'] = prob_ai
-        row_final['Clinical_Risk_Outcome'] = 1 if clip else 0
-        
-        details = get_triage_details(row_final)
-        
-        # บันทึกลง Dashboard
-        now = datetime.now()
-        new_entry = pd.DataFrame([{'Date_Time': now.strftime("%d/%m/%Y %H:%M"), 'Age': age, 'Size_cm': size_cm, 'Risk_Score': prob_ai, 'Result': details['title'], 'Hour': now.hour}])
-        st.session_state.history = pd.concat([st.session_state.history, new_entry], ignore_index=True)
-        
-        st.markdown(f"""<div class='result-card'><div class='{details['class']}'>{details['title']}</div><hr><div style='font-size:20px; line-height:1.6;'><b>{details['follow_up']}</b><br>{details['diet']}<br>{details['activity']}</div></div>""", unsafe_allow_html=True)
+    # ปุ่มกดขนาดใหญ่
+    submit_btn = st.form_submit_button("📊 ประมวลผลและบันทึกข้อมูล", use_container_width=True)
 
-with tab2:
-    st.markdown(f"### 📊 แดชบอร์ดสรุปผล (Dashboard Summary)")
-    st.markdown(f"📅 **ข้อมูลประจำวันที่:** {datetime.now().strftime('%d/%m/%Y')}")
+# --- 7. การคำนวณและแสดงผล ---
+if submit_btn:
+    # เตรียมข้อมูล AI
+    input_df = pd.DataFrame([{
+        'Age': age, 'Size_cm': size, 
+        'Loc_Right': 1 if "ขวา" in loc else 0,
+        'Med_Risk': 1 if med == "มี" else 0,
+        'Radiation': 1 if rad == "มี" else 0,
+        'Chemo': 1 if chemo == "มี" else 0,
+        'EMR': 1 if method == "EMR" else 0,
+        'BX': 1 if "Biopsy" in method else 0,
+        'Cold_Poly': 1 if "Cold" in method else 0,
+        'Hot_Poly': 1 if "Hot" in method else 0,
+        'Sex': 1 if "ชาย" in sex else 0,
+        'Surgery': 0
+    }])
+
+    prob = model.predict_proba(input_df)[0][1]
     
-    if not st.session_state.history.empty:
-        # --- Metrics ---
-        m1, m2, m3 = st.columns(3)
-        m1.metric("เคสวันนี้", f"{len(st.session_state.history)} ราย")
-        m2.metric("อายุเฉลี่ย", f"{st.session_state.history['Age'].mean():.1f} ปี")
-        m3.metric("ขนาดเฉลี่ย", f"{st.session_state.history['Size_cm'].mean():.1f} cm")
-
-        st.divider()
-        
-        # --- Pie Chart (ตรงสีกับ Triage) ---
-        st.subheader("สัดส่วนระดับความเสี่ยง (Risk Proportion)")
-        chart_data = st.session_state.history['Result'].value_counts().reset_index()
-        pie = alt.Chart(chart_data).mark_arc(innerRadius=50).encode(
-            theta='count', 
-            color=alt.Color('Result', scale=alt.Scale(
-                domain=['🔴 ความเสี่ยงสูง (High Risk)', '🟡 ความเสี่ยงปานกลาง (Moderate Risk)', '🟢 ความเสี่ยงต่ำ (Low Risk)'],
-                range=['#b91c1c', '#854d0e', '#15803d']
-            ))
-        )
-        st.altair_chart(pie, use_container_width=True)
-
-        # --- Hourly Trend ---
-        st.subheader("จำนวนเคสในแต่ละช่วงเวลา (Hourly Trend)")
-        trend_data = st.session_state.history.groupby('Hour').size().reset_index(name='Count')
-        line = alt.Chart(trend_data).mark_line(point=True, color='#004d99').encode(x='Hour:O', y='Count:Q')
-        st.altair_chart(line, use_container_width=True)
-
-        st.divider()
-        st.dataframe(st.session_state.history.sort_index(ascending=False), use_container_width=True)
-        
-        if st.button("🗑️ ล้างข้อมูล Dashboard"):
-            st.session_state.history = pd.DataFrame(columns=['Date_Time', 'Age', 'Size_cm', 'Risk_Score', 'Result', 'Hour'])
-            st.rerun()
+    # Hybrid Logic
+    if size >= 2.0 or clip == "มี" or method == "EMR":
+        risk_text, color, note = "🔴 High Risk", "red", "ต้องโทรติดตามภายใน 24 ชม."
+    elif prob >= 0.5:
+        risk_text, color, note = "🟡 Moderate Risk", "orange", "โทรติดตามภายใน 1-3 วัน"
     else:
-        st.info("ยังไม่มีข้อมูลการคัดกรองสำหรับวันนี้")
+        risk_text, color, note = "🟢 Low Risk", "green", "ติดตามตามมาตรฐานปกติ"
 
-st.divider()
-st.caption("GI Endoscopy Unit | National Cancer Institute")
+    # แสดงผลลัพธ์แบบเด่นๆ
+    st.markdown(f"""
+        <div style='text-align: center; border: 2px solid {color}; padding: 15px; border-radius: 10px;'>
+            <h2 style='color: {color};'>{risk_text}</h2>
+            <p>คะแนน AI: {prob:.4f}</p>
+            <p><b>คำแนะนำ:</b> {note}</p>
+        </div>
+    """, unsafe_allow_html=True)
 
-   
-
-   
+    # บันทึกลง Sheets
+    new_data = pd.DataFrame([{
+        "Timestamp": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Age": age, "Size": size, "Method": method, "Risk_Level": risk_text
+    }])
+    
+    try:
+        final_df = pd.concat([df_existing, new_data], ignore_index=True)
+        conn.update(data=final_df)
+        st.toast("บันทึกข้อมูลสำเร็จ!", icon="✅")
+    except:
+        st.error("บันทึกล้มเหลว ตรวจสอบ Secrets")
