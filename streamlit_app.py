@@ -19,7 +19,8 @@ def load_model():
 
 try:
     model = load_model()
-    # ปรับชื่อลำดับที่ 11 (คอลัมน์ M) ให้เป็น 'Prob_Risk' ตามที่ AI ฟ้องขอมา
+    # นี่คือลำดับที่ถูกต้องที่สุดอิงจาก Error Message ของคุณครับ
+    # ต้องเรียงตามนี้เป๊ะๆ AI ถึงจะยอมอ่าน
     model_features = [
         'Age', 'Size_cm', 'Loc_Right', 'Med_Risk', 'Surgery', 
         'Radiation', 'Chemo', 'BX', 'Cold Polypectomy', 'Hot Polypectomy', 
@@ -36,8 +37,8 @@ def get_thailand_time():
 # --- 5. ส่วนหัวโปรแกรม ---
 st.markdown("""
     <div style='text-align: center; background-color: #f0f2f6; padding: 20px; border-radius: 15px; margin-bottom: 20px;'>
-        <h2 style='color: #003366; margin-bottom: 0;'>🩺 NCI BleedGuard-AI (Endo-STAT)</h2>
-        <p style='font-size: 1rem; color: #555;'>ระบบบริหารจัดการความเสี่ยงศูนย์ส่องกล้อง สถาบันมะเร็งแห่งชาติ</p>
+        <h2 style='color: #003366; margin-bottom: 0;'>🩺 NCI BleedGuard-AI</h2>
+        <p style='font-size: 1rem; color: #555;'>ระบบสนับสนุนการตัดสินใจ พัฒนาโดยพยาบาลส่องกล้อง สถาบันมะเร็งแห่งชาติ</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -78,11 +79,11 @@ with st.form("input_form"):
 
 # --- 8. ส่วนประมวลผล ---
 if submit:
-    # คำนวณค่าความเสี่ยงทางคลินิกเพื่อส่งเป็นฟีเจอร์ Prob_Risk (คอลัมน์ M)
+    # 1. คำนวณค่า Prob_Risk (คอลัมน์ M) ตามเกณฑ์ทางคลินิก
     prob_risk_val = 1 if (size >= 2.0 or clip == "มี" or method == "EMR") else 0
 
-    # จัดข้อมูลให้ตรงตามลำดับฟีเจอร์ที่โมเดลรู้จัก
-    raw_input = {
+    # 2. เก็บข้อมูลลงใน Dictionary เบื้องต้น
+    raw_data = {
         'Age': age,
         'Size_cm': size,
         'Loc_Right': 1 if "ขวา" in loc else 0,
@@ -94,21 +95,22 @@ if submit:
         'Cold Polypectomy': 1 if "Cold" in method else 0,
         'Hot Polypectomy': 1 if "Hot" in method else 0,
         'EMR': 1 if "EMR" in method else 0,
-        'Prob_Risk': prob_risk_val, # เปลี่ยนชื่อจาก Clinical_Risk_Outcome เป็น Prob_Risk
+        'Prob_Risk': prob_risk_val,
         'Sex': 1 if sex_input == "ชาย" else 0
     }
     
-    # บังคับสร้าง DataFrame เรียงลำดับตามที่โมเดลจำได้เป๊ะๆ
-    input_df = pd.DataFrame([raw_input])[model_features]
+    # 3. สร้าง DataFrame และ "บังคับลำดับคอลัมน์" ให้ตรงตาม model_features เป๊ะๆ
+    input_df = pd.DataFrame([raw_data])
+    input_df = input_df[model_features] # บรรทัดนี้คือการจัดลำดับครับ
 
     try:
-        # ทำนายผลจาก AI
+        # ทำนายผล
         prob = model.predict_proba(input_df)[0][1]
         
-        # ตัดสินใจระดับความเสี่ยง (ใช้จุดตัด 0.05 เพื่อความภูมิใจในโมเดลและให้เห็นสีเหลือง)
+        # ตัดสินใจระดับความเสี่ยง (ใช้จุดตัด 0.05 เพื่อให้เห็นสีเหลือง 😟)
         if prob_risk_val == 1 or prob >= 0.5:
             res, col, ico, b_col = "🔴 High Risk", "#990000", "😫", "#FFD2D2"
-            adv = "**📋 แผนการพยาบาล:** ติดตามใกล้ชิด 24, 48, 72 ชม. และให้คำแนะนำกลับบ้าน"
+            adv = "**📋 แผนการพยาบาล:** ติดตามใกล้ชิด 24, 48, 72 ชม. และให้คำแนะนำกลับบ้านแบบเข้มงวด"
             st_func = st.error
         elif prob >= 0.05:
             res, col, ico, b_col = "🟡 Moderate Risk", "#827717", "😟", "#FFF9C4"
@@ -121,7 +123,6 @@ if submit:
 
         timestamp = get_thailand_time().strftime("%Y-%m-%d %H:%M:%S")
 
-        # แสดงผลค้างหน้าจอ
         st.write("---")
         st.markdown(f"""
             <div style="background-color: {b_col}; border: 2px solid {col}; padding: 30px; border-radius: 20px; text-align: center;">
@@ -132,7 +133,7 @@ if submit:
         """, unsafe_allow_html=True)
         st_func(adv)
         
-        # บันทึกลง Google Sheets
+        # อัปเดต Google Sheets
         new_row = pd.DataFrame([{"Timestamp": timestamp, "Final_Risk_Level": res, "AI_Score": prob, "Method": method}])
         df_all = pd.concat([df_existing, new_row], ignore_index=True)
         conn.update(data=df_all)
