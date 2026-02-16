@@ -19,13 +19,15 @@ def load_model():
 
 try:
     model = load_model()
-    # ปรับชื่อฟีเจอร์ให้ตรงตามที่โมเดล "Seen at fit time" ตาม Error Message เป๊ะๆ
+    # ปรับ Feature Names ให้ตรงตามที่โมเดล "Seen at fit time" ตาม Error เป๊ะๆ
+    # สังเกตว่าผมใส่ 'Prob_Risk' เพิ่มเข้าไปด้วยตามที่ Error ฟ้องว่า missing
     model_features = [
         'Age', 'Size_cm', 'Loc_Right', 'Med_Risk', 'Surgery', 
-        'Radiation', 'Chemo', 'BX', 'Cold Polypectomy', 'Hot Polypectomy', 'EMR', 'Sex'
+        'Radiation', 'Chemo', 'BX', 'Cold Polypectomy', 'Hot Polypectomy', 
+        'EMR', 'Sex', 'Prob_Risk'
     ]
 except Exception as e:
-    st.error(f"❌ ไม่สามารถโหลดโมเดลได้: {e}")
+    st.error(f"❌ โหลดโมเดลไม่สำเร็จ: {e}")
 
 # --- 4. ฟังก์ชันดึงเวลาไทย ---
 def get_thailand_time():
@@ -36,7 +38,7 @@ def get_thailand_time():
 st.markdown("""
     <div style='text-align: center; background-color: #f0f2f6; padding: 20px; border-radius: 15px; margin-bottom: 20px;'>
         <h2 style='color: #003366; margin-bottom: 0;'>🩺 NCI BleedGuard-AI</h2>
-        <p style='font-size: 1rem; color: #555;'>ระบบสนับสนุนการตัดสินใจ พัฒนาโดยพยาบาลส่องกล้อง สถาบันมะเร็งแห่งชาติ</p>
+        <p style='font-size: 1rem; color: #555;'>ระบบสนับสนุนการตัดสินใจเพื่อความปลอดภัยของผู้ป่วย สถาบันมะเร็งแห่งชาติ</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -45,15 +47,12 @@ try:
     df_existing = conn.read(ttl=0)
     if df_existing is not None and not df_existing.empty:
         df_clean = df_existing.dropna(subset=['Clinical_Risk']).copy()
-        
         st.subheader("📊 สถิติภาพรวมการคัดกรอง")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("เคสสะสมทั้งหมด", f"{len(df_clean)} ราย")
         m2.metric("🔴 High Risk", len(df_clean[df_clean['Clinical_Risk'].str.contains('High', na=False)]))
         m3.metric("🟡 Moderate Risk", len(df_clean[df_clean['Clinical_Risk'].str.contains('Moderate', na=False)]))
         m4.metric("🟢 Low Risk", len(df_clean[df_clean['Clinical_Risk'].str.contains('Low', na=False)]))
-    else:
-        df_existing = pd.DataFrame()
 except:
     df_existing = pd.DataFrame()
 
@@ -68,7 +67,7 @@ with st.form("input_form"):
         sex_input = st.radio("เพศ", ["ชาย", "หญิง"], horizontal=True)
         size = st.number_input("ขนาดติ่งเนื้อ (cm)", 0.1, 10.0, 1.0, step=0.1)
         loc = st.selectbox("ตำแหน่ง", ["ขวา (Right)", "ซ้าย (Left)"])
-        med = st.radio("ยากลุ่มเสี่ยง (ละลายลิ่มเลือด)", ["ไม่มี", "มี"], horizontal=True)
+        med = st.radio("ยากลุ่มเสี่ยง", ["ไม่มี", "มี"], horizontal=True)
     with c2:
         rad = st.radio("ประวัติฉายแสง", ["ไม่มี", "มี"], horizontal=True)
         chemo = st.radio("ประวัติเคมีบำบัด", ["ไม่มี", "มี"], horizontal=True)
@@ -80,7 +79,7 @@ with st.form("input_form"):
 
 # --- 8. ส่วนประมวลผล ---
 if submit:
-    # แมปข้อมูลให้ชื่อตรงกับโมเดล (ใช้ชื่อเต็มตาม Error Message)
+    # สร้าง Dictionary ข้อมูลเบื้องต้น
     input_data = {
         'Age': age,
         'Size_cm': size,
@@ -90,18 +89,24 @@ if submit:
         'Radiation': 1 if rad == "มี" else 0,
         'Chemo': 1 if chemo == "มี" else 0,
         'BX': 1 if "BX" in method else 0,
-        'Cold Polypectomy': 1 if "Cold" in method else 0, # แก้ให้เป็นชื่อเต็ม
-        'Hot Polypectomy': 1 if "Hot" in method else 0,  # แก้ให้เป็นชื่อเต็ม
+        'Cold Polypectomy': 1 if "Cold" in method else 0,
+        'Hot Polypectomy': 1 if "Hot" in method else 0,
         'EMR': 1 if "EMR" in method else 0,
-        'Sex': 1 if sex_input == "ชาย" else 0
+        'Sex': 1 if sex_input == "ชาย" else 0,
+        'Prob_Risk': 0 # ใส่ค่าเริ่มต้นให้ฟีเจอร์ที่โมเดลต้องการแต่เราไม่มีในฟอร์ม
     }
     
-    input_df = pd.DataFrame([input_data])[model_features]
+    # แปลงเป็น DataFrame และบังคับชื่อคอลัมน์ให้ตรงตาม model_features เป๊ะๆ
+    input_df = pd.DataFrame([input_data])
+    
+    # ตรวจสอบและจัดการชื่อคอลัมน์ (ตัดช่องว่างที่อาจแฝงอยู่)
+    input_df.columns = input_df.columns.str.strip()
+    input_df = input_df.reindex(columns=model_features, fill_value=0)
 
     try:
         prob = model.predict_proba(input_df)[0][1]
         
-        # Hybrid Decision: Clinical + AI
+        # Hybrid Decision Logic
         is_high = (size >= 2.0 or clip == "มี" or method == "EMR")
         is_mod = (med == "มี" or rad == "มี" or chemo == "มี" or surgery == "มี" or age >= 75)
 
@@ -120,7 +125,6 @@ if submit:
 
         timestamp = get_thailand_time().strftime("%Y-%m-%d %H:%M:%S")
 
-        # แสดงผลค้างหน้าจอ
         st.write("---")
         st.markdown(f"""
             <div style="background-color: {b_col}; border: 2px solid {col}; padding: 30px; border-radius: 20px; text-align: center;">
@@ -131,11 +135,12 @@ if submit:
         """, unsafe_allow_html=True)
         st_func(adv)
         
-        # อัปเดต Google Sheets (บันทึกข้อมูลเพื่อใช้ใน Dashboard ครั้งหน้า)
+        # อัปเดต Google Sheets
         new_row = pd.DataFrame([{"Timestamp": timestamp, "Clinical_Risk": res, "AI_Score": prob, "Method": method}])
         df_all = pd.concat([df_existing, new_row], ignore_index=True)
         conn.update(data=df_all)
-        st.info("💡 ข้อมูลถูกบันทึกเรียบร้อยแล้ว")
+        st.info("💡 บันทึกข้อมูลเรียบร้อยแล้ว")
 
     except Exception as e:
         st.error(f"Error during prediction: {e}")
+        st.write("ชื่อฟีเจอร์ที่ส่งให้โมเดล:", list(input_df.columns))
