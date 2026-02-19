@@ -2,17 +2,17 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
-import pytz  # สำหรับจัดการเวลาประเทศไทย
+import pytz 
 import plotly.express as px
 
 # --- 1. SET UP & TIMEZONE ---
 st.set_page_config(page_title="NCI BleedGuard-AI", layout="wide")
-tz_th = pytz.timezone('Asia/Bangkok') # ตั้งค่าเวลาไทย
+tz_th = pytz.timezone('Asia/Bangkok') 
 
 st.markdown("""
     <div style="text-align: center;">
         <h1 style="color: #B22222;">🛡️ NCI BleedGuard-AI: The Final Sentinel</h1>
-        <p style="font-size: 18px;">สถาบันมะเร็งแห่งชาติ | เป้าหมาย Sensitivity 91%</p>
+        <p style="font-size: 18px;">สถาบันมะเร็งแห่งชาติ | เป้าหมาย Sensitivity 91% | FN 3%</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -21,16 +21,17 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data():
     try:
-        # ใช้ ttl=0 เพื่อให้ข้อมูลในแดชบอร์ดอัปเดตทันทีที่คีย์
         return conn.read(worksheet="Sheet1", ttl=0)
     except:
         return pd.DataFrame()
 
 # --- 3. ML LOGIC ---
 def predict_bleeding(data):
+    # Rule 1: Clinical Override (Red)
     if data['clip'] == 1:
-        return "🔴 High Risk", "📞 ต้องโทรติดตาม 24, 48, 72 ชม. (พบการติด Hemoclip หน้างาน)", "#FF4B4B"
+        return "🔴 High Risk", "📞 ต้องโทรติดตาม 24, 48, 72 ชม. (พบการติด Hemoclip หน้างาน)", "red"
     
+    # ML Weights
     intercept = -2.4
     weights = {'age': 0.012, 'sex_male': 0.658, 'size': 2.429, 'emr': 1.044, 'hot_poly': 0.850, 
                'cold_poly': 0.074, 'rad': 0.704, 'chemo': 0.631, 'med': -0.606, 'bx': -3.987, 'surgery': 0.618}
@@ -41,25 +42,25 @@ def predict_bleeding(data):
     score += data['size'] * weights['size']
     score += (1 if data['emr'] else 0) * weights['emr']
     score += (1 if data['hot_poly'] else 0) * weights['hot_poly']
-    score += (1 if data['cold_poly'] else 0) * weights['cold_poly']
     score += (1 if data['rad'] else 0) * weights['rad']
     score += (1 if data['chemo'] else 0) * weights['chemo']
     score += (1 if data['med'] else 0) * weights['med']
     score += (1 if data['bx'] else 0) * weights['bx']
     score += (1 if data['surgery'] else 0) * weights['surgery']
 
+    # Decision
     if score >= -2.4:
-        return "🟡 Moderate Risk", "📞 โทรติดตามวันที่ 1 และ 3 (กลุ่มเฝ้าระวังพิเศษ)", "#FFFF00"
+        return "🟡 Moderate Risk", "📞 โทรติดตามวันที่ 1 และ 3 (กลุ่มเฝ้าระวังพิเศษ)", "yellow"
     else:
         if data['rad'] == 1 or data['chemo'] == 1:
-            return "🟡 Moderate Risk (Oncology Guard)", "📞 โทรติดตามวันที่ 1 (เฝ้าระวังประวัติรักษามะเร็ง)", "#FFFF00"
-        return "🟢 Low Risk", "แนะนำอาหารอ่อน สังเกตอาการตามปกติ", "#28A745"
+            return "🟡 Moderate Risk (Oncology Guard)", "📞 โทรติดตามวันที่ 1 (เฝ้าระวังประวัติรักษามะเร็ง)", "yellow"
+        return "🟢 Low Risk", "แนะนำอาหารอ่อน สังเกตอาการตามปกติ", "green"
 
 # --- 4. UI TABS ---
 tab1, tab2 = st.tabs(["📋 ประเมินเคสใหม่", "📊 แดชบอร์ดวิจัย"])
 
 with tab1:
-    with st.form(key="nci_final_master"):
+    with st.form(key="nci_master_v4"):
         st.subheader("1. ข้อมูลพื้นฐาน")
         c1, c2, c3, c4 = st.columns([2, 1, 1, 2])
         case_id_input = c1.text_input("Case ID")
@@ -79,55 +80,41 @@ with tab1:
 
     if submitted:
         if not case_id_input:
-            st.error("กรุณากรอก Case ID")
+            st.error("กรุณากรอก Case ID ก่อนดำเนินการ")
         else:
             input_data = {'age': age_input, 'sex': sex_input, 'size': size_input, 'bx': bx_in, 'cold_poly': cold_in,
                           'hot_poly': hot_in, 'emr': emr_in, 'clip': clip_in, 'med': med_in, 'surgery': surg_in, 'rad': rad_in, 'chemo': chemo_in}
-            res, advice, color_code = predict_bleeding(input_data)
+            res, advice, color_type = predict_bleeding(input_data)
             
-            # ดึงเวลาประเทศไทยปัจจุบัน
-            current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
-            
+            # แสดงผลลัพธ์ด้วยสีที่ล็อคไว้
+            if color_type == "red":
+                st.error(f"### {res}\n{advice}")
+            elif color_type == "yellow":
+                st.warning(f"### {res}\n{advice}")
+            else:
+                st.success(f"### {res}\n{advice}")
+
             # บันทึกข้อมูล
-            new_row = pd.DataFrame([{
-                "Timestamp": current_time, 
-                "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input,
-                "BX": int(bx_in), "Cold_Poly": int(cold_in), "Hot_Poly": int(hot_in), "EMR": int(emr_in), "Clip": int(clip_in), 
-                "Medication": int(med_in), "Surgery": int(surg_in), "Radiation": int(rad_in), "Chemo": int(chemo_in),
-                "Risk_Level": res, "Advice": advice
-            }])
+            current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
+            new_row = pd.DataFrame([{"Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input,
+                                     "BX": int(bx_in), "Cold_Poly": int(cold_in), "Hot_Poly": int(hot_in), "EMR": int(emr_in), "Clip": int(clip_in), 
+                                     "Medication": int(med_in), "Surgery": int(surg_in), "Radiation": int(rad_in), "Chemo": int(chemo_in),
+                                     "Risk_Level": res, "Advice": advice}])
             
             try:
-                df_old = get_data()
-                df_new = pd.concat([df_old, new_row], ignore_index=True)
-                conn.update(worksheet="Sheet1", data=df_new)
-                
-                # แสดงผลสีในหน้า Assessment
-                st.markdown(f"""
-                    <div style="background-color:{color_code}; padding:30px; border-radius:15px; text-align:center; border: 3px solid black;">
-                        <h1 style="color:black; margin:0;">{res}</h1>
-                        <p style="color:black; font-size:20px; font-weight:bold;">{advice}</p>
-                    </div>
-                """, unsafe_allow_html=True)
-                st.success(f"บันทึกสำเร็จเมื่อเวลา (ไทย): {current_time}")
-                st.rerun() # รีเฟรชหน้าเพื่อให้ตัวเลขแดชบอร์ดเปลี่ยนทันที
-            except Exception as e:
-                st.error("บันทึกล้มเหลว: ตรวจสอบการเชื่อมต่อ Google Sheets")
+                df_all = pd.concat([get_data(), new_row], ignore_index=True)
+                conn.update(worksheet="Sheet1", data=df_all)
+                st.info(f"บันทึกเข้า Google Sheets เรียบร้อยเมื่อ {current_time}")
+            except:
+                st.error("เชื่อมต่อฐานข้อมูลล้มเหลว")
 
 with tab2:
-    st.subheader("📊 แดชบอร์ดสรุปผล (อัปเดต Real-time)")
-    
-    if st.button("🔄 ดึงข้อมูลล่าสุด"):
-        st.rerun()
-
+    st.subheader("📊 แดชบอร์ดสรุปผล")
     df = get_data()
     if not df.empty:
-        # จัดการเรื่องวันที่สำหรับ Metrics รายวัน
         df['Timestamp'] = pd.to_datetime(df['Timestamp'])
-        today_date = datetime.now(tz_th).date()
-        today_df = df[df['Timestamp'].dt.date == today_date]
+        today_df = df[df['Timestamp'].dt.date == datetime.now(tz_th).date()]
         
-        st.write(f"📅 ข้อมูลประจำวันที่: {today_date.strftime('%d/%m/%Y')}")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("เคสวันนี้", len(today_df))
         m2.metric("🔴 แดง", len(today_df[today_df['Risk_Level'].str.contains("🔴")]))
@@ -136,25 +123,12 @@ with tab2:
 
         st.divider()
         col_chart, col_data = st.columns([1, 1])
-        
         with col_chart:
-            st.write("**สัดส่วนระดับความเสี่ยง (สะสม)**")
             risk_counts = df['Risk_Level'].value_counts().reset_index()
             risk_counts.columns = ['Risk', 'Count']
-            fig = px.pie(risk_counts, values='Count', names='Risk', 
-                         color='Risk', color_discrete_map={
-                             "🔴 High Risk": "#FF4B4B",
-                             "🟡 Moderate Risk": "#FFFF00",
-                             "🟡 Moderate Risk (Oncology Guard)": "#FFFF00",
-                             "🟢 Low Risk": "#28A745"
-                         })
+            fig = px.pie(risk_counts, values='Count', names='Risk', color='Risk', 
+                         color_discrete_map={"🔴 High Risk": "#FF4B4B", "🟡 Moderate Risk": "#FFFF00", 
+                                             "🟡 Moderate Risk (Oncology Guard)": "#FFFF00", "🟢 Low Risk": "#28A745"})
             st.plotly_chart(fig, use_container_width=True)
-
         with col_data:
-            st.write("**📋 ตารางบันทึกข้อมูล (4 คอลัมน์สำคัญ)**")
-            df_display = df[['Timestamp', 'Case_ID', 'Risk_Level', 'Advice']].copy()
-            df_display['Timestamp'] = df_display['Timestamp'].dt.strftime('%H:%M:%S') # โชว์แค่เวลาในตารางให้ดูง่าย
-            st.dataframe(df_display.sort_values(by="Timestamp", ascending=False), 
-                         use_container_width=True, hide_index=True)
-    else:
-        st.info("ยังไม่มีข้อมูลบันทึกในระบบ")
+            st.dataframe(df[['Timestamp', 'Case_ID', 'Risk_Level', 'Advice']].sort_values(by="Timestamp", ascending=False), use_container_width=True, hide_index=True)
