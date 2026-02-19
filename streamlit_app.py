@@ -101,4 +101,45 @@ with tab1:
             
             # บันทึกข้อมูล
             new_row = pd.DataFrame([{
-                "Timestamp": datetime.now().strftime("%
+                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input,
+                "BX": int(bx_in), "Cold_Poly": int(cold_in), "Hot_Poly": int(hot_in),
+                "EMR": int(emr_in), "Clip": int(clip_in), "Medication": int(med_in),
+                "Surgery": int(surg_in), "Radiation": int(rad_in), "Chemo": int(chemo_in),
+                "Risk_Level": res, "Advice": advice
+            }])
+            
+            try:
+                df_old = get_data()
+                df_new = pd.concat([df_old, new_row], ignore_index=True)
+                conn.update(worksheet="Sheet1", data=df_new)
+                
+                st.markdown(f"<div style='background-color:{color}; padding:20px; border-radius:10px; text-align:center; border: 2px solid #B22222;'>"
+                            f"<h2 style='color:black;'>{res}</h2><p style='color:black;'>{advice}</p></div>", unsafe_allow_html=True)
+                st.success(f"บันทึกเคส {case_id_input} สำเร็จ!")
+            except Exception as e:
+                st.error("ไม่สามารถเชื่อมต่อ Google Sheets ได้ กรุณาเช็กชื่อ Sheet1 หรือสิทธิ์การเข้าถึง")
+
+with tab2:
+    st.subheader("📊 แดชบอร์ดสรุปยอดประจำวัน")
+    df = get_data()
+    if not df.empty:
+        df['Date'] = pd.to_datetime(df['Timestamp']).dt.date
+        today = datetime.now().date()
+        df_today = df[df['Date'] == today]
+        
+        st.write(f"📅 ข้อมูลวันที่: {today.strftime('%d/%m/%Y')}")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("เคสวันนี้", len(df_today))
+        m2.metric("🔴 แดง", len(df_today[df_today['Risk_Level'].str.contains("🔴")]))
+        m3.metric("🟡 เหลือง", len(df_today[df_today['Risk_Level'].str.contains("🟡")]))
+        m4.metric("🟢 เขียว", len(df_today[df_today['Risk_Level'].str.contains("🟢")]))
+
+        st.divider()
+        st.write("**📋 รายการประเมิน (Timestamp / Case ID / Risk / Advice)**")
+        st.dataframe(
+            df[['Timestamp', 'Case_ID', 'Risk_Level', 'Advice']].sort_values(by="Timestamp", ascending=False),
+            use_container_width=True, hide_index=True
+        )
+    else:
+        st.info("ยังไม่มีข้อมูลบันทึกในระบบ")
