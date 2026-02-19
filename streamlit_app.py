@@ -12,7 +12,7 @@ tz_th = pytz.timezone('Asia/Bangkok')
 st.markdown("""
     <div style="text-align: center;">
         <h1 style="color: #B22222;">🛡️ NCI BleedGuard-AI: The Final Sentinel</h1>
-        <p style="font-size: 18px;">สถาบันมะเร็งแห่งชาติ | เป้าหมาย Sensitivity 91% | FN 3%</p>
+        <p style="font-size: 18px;">สถาบันมะเร็งแห่งชาติ | รวมปัจจัยตำแหน่งติ่งเนื้อ (Location)</p>
     </div>
 """, unsafe_allow_html=True)
 
@@ -25,16 +25,19 @@ def get_data():
     except:
         return pd.DataFrame()
 
-# --- 3. ML LOGIC ---
+# --- 3. ML LOGIC (เพิ่ม Location Weight) ---
 def predict_bleeding(data):
-    # Rule 1: Clinical Override (Red)
     if data['clip'] == 1:
         return "🔴 High Risk", "📞 ต้องโทรติดตาม 24, 48, 72 ชม. (พบการติด Hemoclip หน้างาน)", "red"
     
-    # ML Weights
+    # ML Weights (เพิ่ม Location Odds Ratio)
     intercept = -2.4
-    weights = {'age': 0.012, 'sex_male': 0.658, 'size': 2.429, 'emr': 1.044, 'hot_poly': 0.850, 
-               'cold_poly': 0.074, 'rad': 0.704, 'chemo': 0.631, 'med': -0.606, 'bx': -3.987, 'surgery': 0.618}
+    weights = {
+        'age': 0.012, 'sex_male': 0.658, 'size': 2.429, 'emr': 1.044, 
+        'hot_poly': 0.850, 'cold_poly': 0.074, 'rad': 0.704, 'chemo': 0.631, 
+        'med': -0.606, 'bx': -3.987, 'surgery': 0.618,
+        'loc_right': 0.92  # ตัวอย่างน้ำหนักสำหรับ Right-side colon (Cecum/Ascending)
+    }
     
     score = intercept
     score += data['age'] * weights['age']
@@ -47,8 +50,11 @@ def predict_bleeding(data):
     score += (1 if data['med'] else 0) * weights['med']
     score += (1 if data['bx'] else 0) * weights['bx']
     score += (1 if data['surgery'] else 0) * weights['surgery']
+    
+    # คิดคะแนนตำแหน่งติ่งเนื้อ (ถ้าอยู่ด้านขวา เสี่ยงสูงกว่า)
+    if data['location'] in ["Cecum", "Ascending", "Hepatic Flexure"]:
+        score += weights['loc_right']
 
-    # Decision
     if score >= -2.4:
         return "🟡 Moderate Risk", "📞 โทรติดตามวันที่ 1 และ 3 (กลุ่มเฝ้าระวังพิเศษ)", "yellow"
     else:
@@ -60,13 +66,19 @@ def predict_bleeding(data):
 tab1, tab2 = st.tabs(["📋 ประเมินเคสใหม่", "📊 แดชบอร์ดวิจัย"])
 
 with tab1:
-    with st.form(key="nci_master_v4"):
-        st.subheader("1. ข้อมูลพื้นฐาน")
+    with st.form(key="nci_master_v5"):
+        st.subheader("1. ข้อมูลพื้นฐานและพยาธิสภาพ")
         c1, c2, c3, c4 = st.columns([2, 1, 1, 2])
         case_id_input = c1.text_input("Case ID")
         age_input = c2.number_input("อายุ (ปี)", min_value=0, max_value=120, value=60)
         sex_input = c3.selectbox("เพศ", ["ชาย", "หญิง"])
         size_input = c4.number_input("ขนาดติ่งเนื้อ (cm)", min_value=0.0, step=0.1, value=0.5)
+
+        # เพิ่มตำแหน่งติ่งเนื้อ
+        st.markdown("**ตำแหน่งติ่งเนื้อ (Location):**")
+        loc_col1, loc_col2 = st.columns(2)
+        location_input = loc_col1.selectbox("เลือกตำแหน่ง", 
+            ["Cecum", "Ascending", "Hepatic Flexure", "Transverse", "Splenic Flexure", "Descending", "Sigmoid", "Rectum"])
 
         st.divider()
         st.subheader("2. หัตถการและปัจจัยเสี่ยง")
@@ -82,11 +94,14 @@ with tab1:
         if not case_id_input:
             st.error("กรุณากรอก Case ID ก่อนดำเนินการ")
         else:
-            input_data = {'age': age_input, 'sex': sex_input, 'size': size_input, 'bx': bx_in, 'cold_poly': cold_in,
-                          'hot_poly': hot_in, 'emr': emr_in, 'clip': clip_in, 'med': med_in, 'surgery': surg_in, 'rad': rad_in, 'chemo': chemo_in}
+            input_data = {
+                'age': age_input, 'sex': sex_input, 'size': size_input, 'location': location_input,
+                'bx': bx_in, 'cold_poly': cold_in, 'hot_poly': hot_in, 'emr': emr_in, 
+                'clip': clip_in, 'med': med_in, 'surgery': surg_in, 'rad': rad_in, 'chemo': chemo_in
+            }
             res, advice, color_type = predict_bleeding(input_data)
             
-            # แสดงผลลัพธ์ด้วยสีที่ล็อคไว้
+            # แสดงสีผลลัพธ์
             if color_type == "red":
                 st.error(f"### {res}\n{advice}")
             elif color_type == "yellow":
@@ -94,24 +109,29 @@ with tab1:
             else:
                 st.success(f"### {res}\n{advice}")
 
-            # บันทึกข้อมูล
+            # บันทึกข้อมูล (เพิ่มคอลัมน์ Location)
             current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
-            new_row = pd.DataFrame([{"Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input,
-                                     "BX": int(bx_in), "Cold_Poly": int(cold_in), "Hot_Poly": int(hot_in), "EMR": int(emr_in), "Clip": int(clip_in), 
-                                     "Medication": int(med_in), "Surgery": int(surg_in), "Radiation": int(rad_in), "Chemo": int(chemo_in),
-                                     "Risk_Level": res, "Advice": advice}])
+            new_row = pd.DataFrame([{
+                "Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, 
+                "Size": size_input, "Location": location_input, # <--- เพิ่มตรงนี้
+                "BX": int(bx_in), "Cold_Poly": int(cold_in), "Hot_Poly": int(hot_in), 
+                "EMR": int(emr_in), "Clip": int(clip_in), "Medication": int(med_in), 
+                "Surgery": int(surg_in), "Radiation": int(rad_in), "Chemo": int(chemo_in),
+                "Risk_Level": res, "Advice": advice
+            }])
             
             try:
                 df_all = pd.concat([get_data(), new_row], ignore_index=True)
                 conn.update(worksheet="Sheet1", data=df_all)
-                st.info(f"บันทึกเข้า Google Sheets เรียบร้อยเมื่อ {current_time}")
+                st.info(f"บันทึกข้อมูลสำเร็จเมื่อ {current_time}")
             except:
                 st.error("เชื่อมต่อฐานข้อมูลล้มเหลว")
 
 with tab2:
-    st.subheader("📊 แดชบอร์ดสรุปผล")
+    st.subheader("📊 แดชบอร์ดวิจัย")
     df = get_data()
     if not df.empty:
+        # Metrics รายวัน
         df['Timestamp'] = pd.to_datetime(df['Timestamp'])
         today_df = df[df['Timestamp'].dt.date == datetime.now(tz_th).date()]
         
@@ -124,6 +144,7 @@ with tab2:
         st.divider()
         col_chart, col_data = st.columns([1, 1])
         with col_chart:
+            # กราฟสีตรงตามระบบ
             risk_counts = df['Risk_Level'].value_counts().reset_index()
             risk_counts.columns = ['Risk', 'Count']
             fig = px.pie(risk_counts, values='Count', names='Risk', color='Risk', 
@@ -131,4 +152,5 @@ with tab2:
                                              "🟡 Moderate Risk (Oncology Guard)": "#FFFF00", "🟢 Low Risk": "#28A745"})
             st.plotly_chart(fig, use_container_width=True)
         with col_data:
-            st.dataframe(df[['Timestamp', 'Case_ID', 'Risk_Level', 'Advice']].sort_values(by="Timestamp", ascending=False), use_container_width=True, hide_index=True)
+            # โชว์ข้อมูลสำคัญ
+            st.dataframe(df[['Timestamp', 'Case_ID', 'Location', 'Risk_Level', 'Advice']].sort_values(by="Timestamp", ascending=False), use_container_width=True, hide_index=True)
