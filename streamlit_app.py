@@ -9,20 +9,21 @@ st.set_page_config(page_title="NCI BleedGuard-AI", layout="wide")
 st.markdown("""
     <div style="text-align: center;">
         <h1 style="color: #B22222;">🛡️ NCI BleedGuard-AI: The Final Sentinel</h1>
-        <p style="font-size: 18px;">สถาบันมะเร็งแห่งชาติ | เป้าหมาย FN 3%</p>
+        <p style="font-size: 18px;">สถาบันมะเร็งแห่งชาติ | เป้าหมาย Sensitivity 91%</p>
     </div>
 """, unsafe_allow_html=True)
 
-# --- 2. CONNECTION ---
+# --- 2. CONNECTION (บังคับดึงข้อมูลสดใหม่) ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data():
+    # ใช้ ttl=0 เพื่อให้ดึงข้อมูลใหม่จาก Google Sheets ทุกครั้ง ไม่ใช้ค่าเก่าในความจำ
     try:
-        return conn.read(worksheet="Sheet1")
+        return conn.read(worksheet="Sheet1", ttl=0)
     except:
         return pd.DataFrame()
 
-# --- 3. ML LOGIC (No Case ID in Calculation) ---
+# --- 3. ML LOGIC (Drop Case ID) ---
 def predict_bleeding(data):
     if data['clip'] == 1:
         return "🔴 High Risk", "📞 ต้องโทรติดตาม 24, 48, 72 ชม. (พบการติด Hemoclip หน้างาน)", "#FFD2D2"
@@ -59,8 +60,7 @@ def predict_bleeding(data):
 tab1, tab2 = st.tabs(["📋 ประเมินเคสใหม่", "📊 แดชบอร์ดวิจัย"])
 
 with tab1:
-    # สร้างฟอร์มแบบสมบูรณ์
-    with st.form(key="nci_final_form"):
+    with st.form(key="nci_final_v3"):
         st.subheader("1. ข้อมูลพื้นฐาน")
         c1, c2, c3, c4 = st.columns([2, 1, 1, 2])
         case_id_input = c1.text_input("Case ID")
@@ -83,10 +83,8 @@ with tab1:
         rad_in = r3.checkbox("ประวัติฉายแสง")
         chemo_in = r4.checkbox("ประวัติเคมีบำบัด")
 
-        # สำคัญที่สุด: ปุ่มต้องเยื้องเข้ามาอยู่ภายใต้ with st.form (ห้ามอยู่ชิดซ้ายสุด)
         submitted = st.form_submit_button("วิเคราะห์และบันทึกข้อมูล")
 
-    # ส่วนประมวลผล (อยู่นอก with st.form)
     if submitted:
         if not case_id_input:
             st.error("กรุณากรอก Case ID")
@@ -99,9 +97,11 @@ with tab1:
             }
             res, advice, color = predict_bleeding(input_data)
             
-            # บันทึกข้อมูล
+            # สร้าง Timestamp ปัจจุบัน
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
             new_row = pd.DataFrame([{
-                "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "Timestamp": current_time,
                 "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input,
                 "BX": int(bx_in), "Cold_Poly": int(cold_in), "Hot_Poly": int(hot_in),
                 "EMR": int(emr_in), "Clip": int(clip_in), "Medication": int(med_in),
@@ -110,35 +110,68 @@ with tab1:
             }])
             
             try:
+                # ดึงข้อมูลเก่า (สดใหม่) มาต่อกับข้อมูลใหม่
                 df_old = get_data()
                 df_new = pd.concat([df_old, new_row], ignore_index=True)
                 conn.update(worksheet="Sheet1", data=df_new)
                 
                 st.markdown(f"<div style='background-color:{color}; padding:20px; border-radius:10px; text-align:center; border: 2px solid #B22222;'>"
                             f"<h2 style='color:black;'>{res}</h2><p style='color:black;'>{advice}</p></div>", unsafe_allow_html=True)
-                st.success(f"บันทึกเคส {case_id_input} สำเร็จ!")
+                st.success(f"บันทึกสำเร็จเมื่อเวลา {current_time}")
+                # บังคับให้หน้าเว็บโหลดใหม่เพื่ออัปเดตตัวเลข
+                st.rerun()
             except Exception as e:
-                st.error("ไม่สามารถเชื่อมต่อ Google Sheets ได้ กรุณาเช็กชื่อ Sheet1 หรือสิทธิ์การเข้าถึง")
+                st.error("บันทึกล้มเหลว: ตรวจสอบการเชื่อมต่อ Google Sheets")
 
 with tab2:
-    st.subheader("📊 แดชบอร์ดสรุปยอดประจำวัน")
+    st.subheader("📊 แดชบอร์ดวิจัย (อัปเดต Real-time)")
+    
+    # เพิ่มปุ่มกดรีเฟรชข้อมูลเองด้วย
+    if st.button("🔄 อัปเดตข้อมูลล่าสุด"):
+        st.rerun()
+
     df = get_data()
+    
     if not df.empty:
-        df['Date'] = pd.to_datetime(df['Timestamp']).dt.date
+        # 1. แก้ไขเรื่องวันที่ (Timestamp)
+        # ตรวจสอบว่าคอลัมน์ Timestamp มีข้อมูลจริง
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+        df['Date_Only'] = df['Timestamp'].dt.date
         today = datetime.now().date()
-        df_today = df[df['Date'] == today]
+        df_today = df[df['Date_Only'] == today]
         
+        # 2. จำนวนยอด (Metrics)
         st.write(f"📅 ข้อมูลวันที่: {today.strftime('%d/%m/%Y')}")
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("เคสวันนี้", len(df_today))
+        m1.metric("เคสทั้งหมดวันนี้", len(df_today))
         m2.metric("🔴 แดง", len(df_today[df_today['Risk_Level'].str.contains("🔴")]))
         m3.metric("🟡 เหลือง", len(df_today[df_today['Risk_Level'].str.contains("🟡")]))
         m4.metric("🟢 เขียว", len(df_today[df_today['Risk_Level'].str.contains("🟢")]))
 
         st.divider()
-        st.write("**📋 รายการประเมิน (Timestamp / Case ID / Risk / Advice)**")
+
+        # 3. กราฟ (Charts)
+        col_l, col_r = st.columns([1, 1])
+        with col_l:
+            st.write("**สัดส่วนความเสี่ยง (สะสมทั้งหมด)**")
+            # นับจำนวนแยกตาม Risk_Level มาทำกราฟ
+            risk_stats = df['Risk_Level'].value_counts()
+            st.bar_chart(risk_stats)
+            
+        with col_r:
+            st.info(f"🎯 **Sensitivity Target:** 91%\n\n📉 **FN Target:** 3%")
+            st.write(f"จำนวนเคสสะสมในฐานข้อมูล: {len(df)} ราย")
+
+        st.divider()
+
+        # 4. ตารางข้อมูล (Display)
+        st.write("**📋 บันทึกล่าสุด (Timestamp ตรงตามจริง)**")
+        # จัดรูปแบบ Timestamp ให้ดูง่ายในตาราง
+        df_display = df[['Timestamp', 'Case_ID', 'Risk_Level', 'Advice']].copy()
+        df_display['Timestamp'] = df_display['Timestamp'].dt.strftime('%Y-%m-%d %H:%M')
+        
         st.dataframe(
-            df[['Timestamp', 'Case_ID', 'Risk_Level', 'Advice']].sort_values(by="Timestamp", ascending=False),
+            df_display.sort_values(by="Timestamp", ascending=False),
             use_container_width=True, hide_index=True
         )
     else:
