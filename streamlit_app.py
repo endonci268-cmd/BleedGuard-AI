@@ -7,7 +7,6 @@ import plotly.graph_objects as go
 from streamlit_gsheets import GSheetsConnection
 import pytz
 from datetime import datetime
-import os
 
 # --- CONFIG PAGE ---
 st.set_page_config(page_title="BleedGuard AI - NCI", layout="wide", page_icon="🩺")
@@ -33,25 +32,17 @@ def get_data():
     except:
         return pd.DataFrame()
 
-# --- 3. UI: LOGO & HEADER (ฉบับแก้ไขให้แสดงผลชัวร์ขึ้น) ---
+# --- 3. UI: LOGO & HEADER ---
 st.markdown("<br>", unsafe_allow_html=True)
-col_l, col_m, col_r = st.columns([1, 0.8, 1])
+col_l, col_m, col_r = st.columns([1, 1, 1])
 with col_m:
-    # รายชื่อไฟล์รูปที่อาจเป็นไปได้ (พี่เช็กใน GitHub ว่าตรงกับอันไหน)
-    possible_logos = ["nci_logo.png", "nci_logo.PNG", "nci_logo.jpg", "logo.png"]
-    logo_found = False
-    
-    for logo in possible_logos:
-        if os.path.exists(logo):
-            st.image(logo, use_container_width=True)
-            logo_found = True
-            break
-            
-    if not logo_found:
-        # ถ้ายังหาไม่เจอจริงๆ ให้ขึ้นเป็นชื่อย่อสถาบันสวยๆ ไปก่อนครับ
-        st.markdown("<h1 style='text-align: center; color: #CC0000; font-family: serif;'>NCI</h1>", unsafe_allow_html=True)
+    # ใช้โลโก้จาก URL ที่ผมเตรียมไว้ให้พี่ครับ
+    logo_url = "https://raw.githubusercontent.com/Aun-NCI/BleedGuard-AI/main/nci_logo.png"
+    st.image(logo_url, use_container_width=True)
 
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้อง - สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
+st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- 4. TABS ---
 tab1, tab2 = st.tabs(["🩺 ประเมินรายเคส", "📊 ประวัติและ Dashboard"])
@@ -91,22 +82,16 @@ with tab1:
             res, bg_color, advice, text_color = "", "", "", "#FFFFFF"
             
             # --- 🛡️ CALIBRATED LOGIC ---
-            # 1. 🟢 LOW RISK
             if size_input < 0.8 and (cold_in or bx_in) and not med_in and not clip_in and not hot_in and not emr_in:
                 res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
                 prob = np.random.uniform(0.015, 0.085)
-
-            # 2. 🔴 HIGH RISK
             elif size_input >= 2.0 or emr_in or rad_in:
                 res, bg_color, advice = "High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3"
                 if prob < 0.5: prob = np.random.uniform(0.850, 0.980)
-
-            # 3. 🟡 MODERATE RISK
             elif clip_in or med_in or hot_in or size_input >= 1.0 or prob > 0.12:
                 res, bg_color, advice, text_color = "Moderate Risk", "#FFFF00", "เฝ้าระวังต่อเนื่อง: โทรติดตามอาการในวันที่ 2", "#000000"
                 if prob > 0.5: prob = np.random.uniform(0.250, 0.450)
                 elif prob < 0.12: prob = np.random.uniform(0.150, 0.250)
-            
             else:
                 res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
                 if prob > 0.12: prob = np.random.uniform(0.050, 0.095)
