@@ -33,19 +33,25 @@ def get_data():
     except:
         return pd.DataFrame()
 
-# --- 3. UI: LOGO & HEADER ---
+# --- 3. UI: LOGO & HEADER (ฉบับแก้ไขให้แสดงผลชัวร์ขึ้น) ---
 st.markdown("<br>", unsafe_allow_html=True)
 col_l, col_m, col_r = st.columns([1, 0.8, 1])
 with col_m:
-    # ตรวจสอบว่ามีไฟล์ nci_logo.png ใน GitHub หรือไม่
-    if os.path.exists("nci_logo.png"):
-        st.image("nci_logo.png", use_container_width=True)
-    else:
-        st.markdown("<h2 style='text-align: center; color: #CC0000;'>NCI BleedGuard</h2>", unsafe_allow_html=True)
+    # รายชื่อไฟล์รูปที่อาจเป็นไปได้ (พี่เช็กใน GitHub ว่าตรงกับอันไหน)
+    possible_logos = ["nci_logo.png", "nci_logo.PNG", "nci_logo.jpg", "logo.png"]
+    logo_found = False
+    
+    for logo in possible_logos:
+        if os.path.exists(logo):
+            st.image(logo, use_container_width=True)
+            logo_found = True
+            break
+            
+    if not logo_found:
+        # ถ้ายังหาไม่เจอจริงๆ ให้ขึ้นเป็นชื่อย่อสถาบันสวยๆ ไปก่อนครับ
+        st.markdown("<h1 style='text-align: center; color: #CC0000; font-family: serif;'>NCI</h1>", unsafe_allow_html=True)
 
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้อง - สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
-st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- 4. TABS ---
 tab1, tab2 = st.tabs(["🩺 ประเมินรายเคส", "📊 ประวัติและ Dashboard"])
