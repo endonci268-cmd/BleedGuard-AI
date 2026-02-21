@@ -35,8 +35,8 @@ def get_data():
 st.markdown("<br>", unsafe_allow_html=True)
 col_l, col_m, col_r = st.columns([1, 1, 1])
 with col_m:
-    # ดึงโลโก้จากลิงก์กลางที่ผมเตรียมไว้ให้ชัวร์ 100% ครับ
-st.image("https://raw.githubusercontent.com/endonci268-cmd/BleedGuard-AI/main/nci_logo.png", use_container_width=True)
+    # ต้องมีย่อหน้า (กด Tab หรือ Space 4 ครั้ง) ข้างหน้าคำว่า st.image นะครับ
+    st.image("https://raw.githubusercontent.com/endonci268-cmd/BleedGuard-AI/main/nci_logo.png", use_container_width=True)
 st.image(logo_url, use_container_width=True)
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้องลำไส้ใหญ่ - สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
