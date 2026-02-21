@@ -36,7 +36,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 col_l, col_m, col_r = st.columns([1, 1, 1])
 with col_m:
     # ใช้ลิงก์ตรงจาก Postimg ที่พี่ส่งมาครับ ชัดเจนและเสถียรแน่นอน
-    st.image("https://i.postimg.cc/7GHkmqzj/nci-logo-png.png", use_container_width=True)
+    st.image("[url=https://postimages.org/][img]https://i.postimg.cc/jSwH6HgS/dawn-hold-(46).png[/img][/url])
 
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้อง - สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
