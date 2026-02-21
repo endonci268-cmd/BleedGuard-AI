@@ -51,24 +51,25 @@ with tab1:
             rad_in = st.checkbox("ประวัติฉายแสง (Radiation)")
             chemo_in = st.checkbox("ประวัติเคมีบำบัด (Chemo)")
             bx_in = st.checkbox("Biopsy (BX)")
-            cold_in = st.checkbox("Cold Snare Polypectomy (Cold_Poly)")
-            hot_in = st.checkbox("Hot Polypectomy (Hot_Poly)")
+            cold_in = st.checkbox("Cold Snare Polypectomy")
+            hot_in = st.checkbox("Hot Polypectomy")
             emr_in = st.checkbox("EMR")
             clip_in = st.checkbox("มีการติด Hemoclip (Clip)")
 
         submit = st.form_submit_button("ประเมินผลและบันทึกข้อมูล")
 
     if submit:
-        # --- A. เตรียมข้อมูลสำหรับ AI (12 ปัจจัย) ---
+        # --- A. เตรียมข้อมูลสำหรับ AI (เรียงตาม Colab เป๊ะๆ) ---
         loc_right = 1 if loc_side == "Right Side" else 0
         
-        # ชื่อคอลัมน์ต้องตรงกับใน Google Colab เป๊ะๆ (ตัวพิมพ์เล็ก)
+        # มัดรวมปัจจัย 12 ตัว (ต้องเรียงลำดับตาม X_train ใน Colab)
         features_list = [
             age_input, sex_input, size_input, loc_right, 
             int(med_in), int(surg_in), int(rad_in), int(chemo_in), 
             int(bx_in), int(cold_in), int(hot_in), int(emr_in)
         ]
         
+        # ชื่อคอลัมน์ต้องตรงกับ Colab เป๊ะๆ (เปลี่ยนเป็น cold_snare แล้ว)
         input_df = pd.DataFrame([features_list], columns=[
             'age', 'sex', 'size_cm', 'loc_right', 'med_risk', 'surgery', 
             'radiation', 'chemo', 'bx', 'cold_snare', 'hot_poly', 'emr'
@@ -77,7 +78,7 @@ with tab1:
         # ทำนาย AI Probability
         prob = model.predict_proba(input_df)[0][1]
         
-        # --- B. NEW LOGIC (Sensitivity 100%) ---
+        # --- B. NEW LOGIC (Sensitivity 100% + Safety Override) ---
         res, advice, bg_color, text_color = "", "", "", "#FFFFFF"
         
         # 🔴 กฎสีแดง (Override)
@@ -116,14 +117,13 @@ with tab1:
             conn.update(worksheet="Sheet1", data=updated_df)
             st.toast(f"บันทึกข้อมูลสำเร็จ: {current_time}")
         except:
-            st.error("⚠️ ไม่สามารถบันทึกข้อมูลลง Google Sheets ได้ โปรดตรวจสอบการเชื่อมต่อ")
+            st.error("⚠️ ไม่สามารถบันทึกข้อมูลลง Google Sheets ได้")
 
 with tab2:
     st.header("📊 แดชบอร์ดสรุปผลการคัดกรอง")
     df = get_data()
     
     if not df.empty:
-        # สรุปภาพรวม
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("เคสสะสมทั้งหมด", len(df))
         m2.metric("🔴 เสี่ยงสูง", len(df[df['Risk_Level'].str.contains("🔴")]))
