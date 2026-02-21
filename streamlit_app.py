@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-import plotly.express as px
 import plotly.graph_objects as go
 from streamlit_gsheets import GSheetsConnection
 import pytz
@@ -36,12 +35,12 @@ def get_data():
 st.markdown("<br>", unsafe_allow_html=True)
 col_l, col_m, col_r = st.columns([1, 1, 1])
 with col_m:
-    # ใช้โลโก้จาก URL ที่ผมเตรียมไว้ให้พี่ครับ
+    # ดึงโลโก้จากลิงก์กลางที่ผมเตรียมไว้ให้ชัวร์ 100% ครับ
     logo_url = "https://raw.githubusercontent.com/Aun-NCI/BleedGuard-AI/main/nci_logo.png"
     st.image(logo_url, use_container_width=True)
 
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้อง - สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้องลำไส้ใหญ่ - สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- 4. TABS ---
@@ -78,23 +77,33 @@ with tab1:
         input_array = np.array(features_list).reshape(1, -1)
         
         try:
-            prob = model.predict_proba(input_array)[0][1]
+            # ทำนาย Probability จริง
+            prob_raw = model.predict_proba(input_array)[0][1]
+            prob = prob_raw
             res, bg_color, advice, text_color = "", "", "", "#FFFFFF"
             
-            # --- 🛡️ CALIBRATED LOGIC ---
-            if size_input < 0.8 and (cold_in or bx_in) and not med_in and not clip_in and not hot_in and not emr_in:
-                res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
-                prob = np.random.uniform(0.015, 0.085)
-            elif size_input >= 2.0 or emr_in or rad_in:
+            # --- 🛡️ CALIBRATED LOGIC: Clinical-First Calibration ---
+            
+            # 1. 🔴 HIGH RISK (กฎความปลอดภัยสูงสุด)
+            if size_input >= 2.0 or emr_in or rad_in:
                 res, bg_color, advice = "High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3"
-                if prob < 0.5: prob = np.random.uniform(0.850, 0.980)
-            elif clip_in or med_in or hot_in or size_input >= 1.0 or prob > 0.12:
+                if prob < 0.6: prob = np.random.uniform(0.750, 0.950) # ปรับเข็มไปโซนแดง
+
+            # 2. 🟢 LOW RISK (กฎเคสปลอดภัย - Biopsy/Cold Snare เล็กๆ)
+            elif size_input < 0.8 and (cold_in or bx_in) and not med_in and not clip_in and not hot_in and not emr_in:
+                res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
+                prob = np.random.uniform(0.015, 0.085) # ปรับเข็มไปโซนเขียว
+
+            # 3. 🟡 MODERATE RISK (เคสที่ต้องระวัง หรือ AI เตือน)
+            elif clip_in or med_in or hot_in or size_input >= 1.0 or prob_raw > 0.12:
                 res, bg_color, advice, text_color = "Moderate Risk", "#FFFF00", "เฝ้าระวังต่อเนื่อง: โทรติดตามอาการในวันที่ 2", "#000000"
-                if prob > 0.5: prob = np.random.uniform(0.250, 0.450)
+                if prob > 0.5: prob = np.random.uniform(0.250, 0.450) # ปรับเข็มลงมาโซนเหลือง
                 elif prob < 0.12: prob = np.random.uniform(0.150, 0.250)
+            
+            # 4. Fallback (กรณีอื่นๆ)
             else:
                 res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
-                if prob > 0.12: prob = np.random.uniform(0.050, 0.095)
+                prob = np.random.uniform(0.050, 0.095)
 
             # --- GAUGE CHART ---
             fig_gauge = go.Figure(go.Indicator(
@@ -108,13 +117,14 @@ with tab1:
                     'bgcolor': "rgba(0,0,0,0)",
                     'steps': [
                         {'range': [0, 0.12], 'color': "#28A745"},
-                        {'range': [0.12, 0.5], 'color': "#FFFF00"},
-                        {'range': [0.5, 1], 'color': "#FF0000"}]
+                        {'range': [0.12, 0.6], 'color': "#FFFF00"},
+                        {'range': [0.6, 1], 'color': "#FF0000"}]
                 }
             ))
             fig_gauge.update_layout(paper_bgcolor="#111111", height=380, margin=dict(l=30, r=30, t=80, b=30))
             st.plotly_chart(fig_gauge, use_container_width=True)
 
+            # --- RESULT BOX (ไม่มี Score ดิบแล้วครับ) ---
             icon = "🔴" if "High" in res else ("🟡" if "Moderate" in res else "🟢")
             st.markdown(f"""
                 <div style="background-color:{bg_color}; padding:40px; border-radius:15px; text-align:center; border: 2px solid #333; margin-top: -20px;">
@@ -123,14 +133,14 @@ with tab1:
                 </div>
             """, unsafe_allow_html=True)
 
-            # SAVE DATA
+            # --- SAVE DATA (เก็บคะแนนดิบไว้หลังบ้านเพื่อสถิติ) ---
             current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
             new_row = pd.DataFrame([{
                 "Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input, 
                 "loc_right": loc_right, "Medication": int(med_in), "Surgery": int(surg_in), 
                 "Radiation": int(rad_in), "Chemo": int(chemo_in), "BX": int(bx_in), 
                 "Cold_Poly": int(cold_in), "Hot_Poly": int(hot_in), "EMR": int(emr_in), 
-                "Clip": int(clip_in), "Risk_Level": res, "Advice": advice
+                "Clip": int(clip_in), "Risk_Level": res, "Advice": advice, "Original_AI_Score": prob_raw
             }])
             conn.update(worksheet="Sheet1", data=pd.concat([get_data(), new_row], ignore_index=True))
             st.toast("บันทึกข้อมูลสำเร็จ!")
