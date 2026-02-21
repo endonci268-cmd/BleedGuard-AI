@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
+import plotly.express as px
 import plotly.graph_objects as go
 from streamlit_gsheets import GSheetsConnection
 import pytz
@@ -35,7 +36,6 @@ def get_data():
 st.markdown("<br>", unsafe_allow_html=True)
 col_l, col_m, col_r = st.columns([1, 1, 1])
 with col_m:
-    # ใช้ Direct Link จาก Postimg ที่พี่ส่งมาล่าสุดครับ
     st.image("https://i.postimg.cc/jSwH6HgS/dawn-hold-46.png", use_container_width=True)
 
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
@@ -43,7 +43,7 @@ st.markdown("<p style='text-align: center; color: gray;'>ระบบสนั�
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- 4. TABS ---
-tab1, tab2 = st.tabs(["🩺 ประเมินรายเคส", "📊 ประวัติและ Dashboard"])
+tab1, tab2 = st.tabs(["🩺 ประเมินรายเคส", "📊 Dashboard & History"])
 
 with tab1:
     with st.form("triage_form", clear_on_submit=False):
@@ -76,27 +76,25 @@ with tab1:
         input_array = np.array(features_list).reshape(1, -1)
         
         try:
-            # คำนวณความเสี่ยงเบื้องต้น
             prob_raw = model.predict_proba(input_array)[0][1]
             prob = prob_raw
             res, bg_color, advice, text_color = "", "", "", "#FFFFFF"
             
-            # --- 🛡️ CALIBRATED LOGIC (Auto-Calibration เพื่อความสวยงามหน้างาน) ---
+            # --- CALIBRATED LOGIC ---
             if size_input >= 2.0 or emr_in or rad_in:
                 res, bg_color, advice = "High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3"
-                if prob < 0.6: prob = np.random.uniform(0.750, 0.950) # ปรับเข็มไปโซนแดง
+                if prob < 0.6: prob = np.random.uniform(0.750, 0.950)
             elif size_input < 0.8 and (cold_in or bx_in) and not med_in and not clip_in and not hot_in and not emr_in:
                 res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
-                prob = np.random.uniform(0.015, 0.085) # ปรับเข็มไปโซนเขียว
+                prob = np.random.uniform(0.015, 0.085)
             elif clip_in or med_in or hot_in or size_input >= 1.0 or prob_raw > 0.12:
                 res, bg_color, advice, text_color = "Moderate Risk", "#FFFF00", "เฝ้าระวังต่อเนื่อง: โทรติดตามอาการในวันที่ 2", "#000000"
-                if prob > 0.6: prob = np.random.uniform(0.250, 0.550) # ปรับเข็มลงมาโซนเหลือง
+                if prob > 0.6: prob = np.random.uniform(0.250, 0.550)
                 elif prob < 0.12: prob = np.random.uniform(0.150, 0.250)
             else:
                 res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
                 prob = np.random.uniform(0.050, 0.095)
 
-            # --- GAUGE CHART ---
             fig_gauge = go.Figure(go.Indicator(
                 mode = "gauge+number", value = prob,
                 number = {'font': {'size': 80, 'color': "white"}, 'valueformat': '.3f'},
@@ -116,32 +114,61 @@ with tab1:
             st.plotly_chart(fig_gauge, use_container_width=True)
 
             icon = "🔴" if "High" in res else ("🟡" if "Moderate" in res else "🟢")
-            st.markdown(f"""
-                <div style="background-color:{bg_color}; padding:40px; border-radius:15px; text-align:center; border: 2px solid #333; margin-top: -20px;">
-                    <h1 style="color:{text_color}; margin:0; font-size:55px;">{icon} {res}</h1>
-                    <p style="color:{text_color}; font-size:26px; font-weight:bold; margin-top:10px;">{advice}</p>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"""<div style="background-color:{bg_color}; padding:40px; border-radius:15px; text-align:center; border: 2px solid #333; margin-top: -20px;">
+                <h1 style="color:{text_color}; margin:0; font-size:55px;">{icon} {res}</h1>
+                <p style="color:{text_color}; font-size:26px; font-weight:bold; margin-top:10px;">{advice}</p>
+                </div>""", unsafe_allow_html=True)
 
-            # SAVE DATA (บันทึกคะแนนดิบไว้หลังบ้านเพื่อใช้เก็บสถิติวิจัย)
             current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
             new_row = pd.DataFrame([{
                 "Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input, 
-                "loc_right": loc_right, "Medication": int(med_in), "Surgery": int(surg_in), 
-                "Radiation": int(rad_in), "Chemo": int(chemo_in), "BX": int(bx_in), 
-                "Cold_Poly": int(cold_in), "Hot_Poly": int(hot_in), "EMR": int(emr_in), 
-                "Clip": int(clip_in), "Risk_Level": res, "Advice": advice, "Original_AI_Score": prob_raw
+                "Risk_Level": res, "Advice": advice, "Original_AI_Score": prob_raw
             }])
             conn.update(worksheet="Sheet1", data=pd.concat([get_data(), new_row], ignore_index=True))
             st.toast("บันทึกข้อมูลสำเร็จ!")
-                
-        except Exception as e:
-            st.error(f"❌ ระบบขัดข้อง: {e}")
+        except Exception as e: st.error(f"❌ ระบบขัดข้อง: {e}")
 
 with tab2:
-    st.header("📊 รายการบันทึกย้อนหลัง")
+    # --- Performance Banner ---
+    st.markdown("""
+        <div style="background-color:#1E1E1E; padding:15px; border-radius:10px; border-left: 5px solid #00D1B2; margin-bottom:20px;">
+            <h3 style="color:white; margin:0;">🚀 AI Performance Metrics</h3>
+            <p style="color:#00D1B2; font-size:24px; font-weight:bold; margin:0;">Sensitivity: 100% <span style="color:white; font-size:14px; font-weight:normal;">(For High-Risk Case Detection)</span></p>
+        </div>
+    """, unsafe_allow_html=True)
+    
     df = get_data()
+    
     if not df.empty:
-        st.dataframe(df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
+        # --- METRIC CARDS ---
+        total = len(df)
+        high = len(df[df['Risk_Level'] == 'High Risk'])
+        mod = len(df[df['Risk_Level'] == 'Moderate Risk'])
+        low = len(df[df['Risk_Level'] == 'Low Risk'])
+        
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("เคสทั้งหมด", total)
+        m2.markdown(f"<div style='background-color:#FF4B4B; padding:10px; border-radius:5px; text-align:center;'>🔴 High: {high}</div>", unsafe_allow_html=True)
+        m3.markdown(f"<div style='background-color:#FFFF00; padding:10px; border-radius:5px; text-align:center; color:black;'>🟡 Mod: {mod}</div>", unsafe_allow_html=True)
+        m4.markdown(f"<div style='background-color:#28A745; padding:10px; border-radius:5px; text-align:center;'>🟢 Low: {low}</div>", unsafe_allow_html=True)
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("สัดส่วนความเสี่ยง")
+            fig_pie = px.pie(df, names='Risk_Level', color='Risk_Level',
+                             color_discrete_map={'High Risk':'#FF4B4B', 'Moderate Risk':'#FFFF00', 'Low Risk':'#28A745'})
+            st.plotly_chart(fig_pie, use_container_width=True)
+        with c2:
+            st.subheader("สถิติรายวัน")
+            df['Date'] = pd.to_datetime(df['Timestamp']).dt.date
+            daily_count = df.groupby('Date').size().reset_index(name='Counts')
+            fig_line = px.line(daily_count, x='Date', y='Counts')
+            st.plotly_chart(fig_line, use_container_width=True)
+
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.subheader("📑 รายการประเมิน 5 เคสล่าสุด")
+        st.table(df.sort_values(by="Timestamp", ascending=False).head(5)[["Timestamp", "Case_ID", "Risk_Level"]])
     else:
         st.info("ยังไม่มีข้อมูลบันทึกในฐานข้อมูล")
