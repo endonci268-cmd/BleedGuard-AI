@@ -40,7 +40,7 @@ with col_m:
     st.image(logo_url, use_container_width=True)
 
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้องลำไส้ใหญ่ สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้องลำไส้ใหญ่ ศูนย์ส่องกล้องระบบทางเดินอาหาร สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- 4. TABS ---
