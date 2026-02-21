@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import joblib
 import plotly.express as px
 from streamlit_gsheets import GSheetsConnection
@@ -13,7 +14,7 @@ tz_th = pytz.timezone('Asia/Bangkok')
 # --- 1. LOAD MODEL ---
 @st.cache_resource
 def load_model():
-    # ตรวจสอบว่าไฟล์ใน GitHub ชื่อ bleedguard_model.pkl นะครับ
+    # ตรวจสอบชื่อไฟล์โมเดลใน GitHub ให้ตรงนะครับ
     return joblib.load('bleedguard_model.pkl')
 
 try:
@@ -59,35 +60,29 @@ with tab1:
         submit = st.form_submit_button("ประเมินผลและบันทึกข้อมูล")
 
     if submit:
-        # --- A. เตรียมข้อมูลสำหรับ AI (เรียงตาม Colab เป๊ะๆ) ---
+        # --- A. เตรียมข้อมูลสำหรับ AI (ส่งเป็น Array เพื่อเลี่ยง Error ชื่อคอลัมน์) ---
         loc_right = 1 if loc_side == "Right Side" else 0
         
-        # มัดรวมปัจจัย 12 ตัว (ต้องเรียงลำดับตาม X_train ใน Colab)
+        # มัดรวมปัจจัย 12 ตัว (เรียงลำดับตามที่ใช้ใน Colab)
         features_list = [
             age_input, sex_input, size_input, loc_right, 
             int(med_in), int(surg_in), int(rad_in), int(chemo_in), 
             int(bx_in), int(cold_in), int(hot_in), int(emr_in)
         ]
         
-        # ชื่อคอลัมน์ต้องตรงกับ Colab เป๊ะๆ (เปลี่ยนเป็น cold_snare แล้ว)
-        input_df = pd.DataFrame([features_list], columns=[
-            'age', 'sex', 'size_cm', 'loc_right', 'med_risk', 'surgery', 
-            'radiation', 'chemo', 'bx', 'cold_snare', 'hot_poly', 'emr'
-        ])
+        # 🌟 แปลงเป็น Numpy Array เพื่อแก้ปัญหา ValueError เรื่อง Feature Names
+        input_array = np.array(features_list).reshape(1, -1)
         
         # ทำนาย AI Probability
-        prob = model.predict_proba(input_df)[0][1]
+        prob = model.predict_proba(input_array)[0][1]
         
-        # --- B. NEW LOGIC (Sensitivity 100% + Safety Override) ---
+        # --- B. NEW LOGIC (Sensitivity 100%) ---
         res, advice, bg_color, text_color = "", "", "", "#FFFFFF"
         
-        # 🔴 กฎสีแดง (Override)
         if size_input >= 2.0 or emr_in or rad_in:
             res, bg_color, advice = "🔴 High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3"
-        # 🟡 กฎสีเหลือง (AI Threshold 0.12 หรือติดคลิป)
         elif clip_in or prob > 0.12:
             res, bg_color, advice, text_color = "🟡 Moderate Risk", "#FFFF00", "เฝ้าระวังต่อเนื่อง: โทรติดตามอาการในวันที่ 2", "#000000"
-        # 🟢 กฎสีเขียว
         else:
             res, bg_color, advice = "🟢 Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำการสังเกตอาการด้วยตนเอง"
 
@@ -121,27 +116,25 @@ with tab1:
 
 with tab2:
     st.header("📊 แดชบอร์ดสรุปผลการคัดกรอง")
-    df = get_data()
-    
-    if not df.empty:
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("เคสสะสมทั้งหมด", len(df))
-        m2.metric("🔴 เสี่ยงสูง", len(df[df['Risk_Level'].str.contains("🔴")]))
-        m3.metric("🟡 เสี่ยงปานกลาง", len(df[df['Risk_Level'].str.contains("🟡")]))
-        m4.metric("🟢 เสี่ยงต่ำ", len(df[df['Risk_Level'].str.contains("🟢")]))
-        
-        st.divider()
-        
-        c_left, c_right = st.columns([1, 1])
-        with c_left:
-            st.subheader("สัดส่วนกลุ่มความเสี่ยง")
-            fig = px.pie(df, names='Risk_Level', color='Risk_Level',
-                         color_discrete_map={"🔴 High Risk": "#FF4B4B", "🟡 Moderate Risk": "#FFFF00", "🟢 Low Risk": "#28A745"})
-            st.plotly_chart(fig, use_container_width=True)
+    try:
+        df = get_data()
+        if not df.empty:
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("เคสสะสมทั้งหมด", len(df))
+            m2.metric("🔴 เสี่ยงสูง", len(df[df['Risk_Level'].str.contains("🔴")]))
+            m3.metric("🟡 เสี่ยงปานกลาง", len(df[df['Risk_Level'].str.contains("🟡")]))
+            m4.metric("🟢 เสี่ยงต่ำ", len(df[df['Risk_Level'].str.contains("🟢")]))
             
-        with c_right:
-            st.subheader("📋 บันทึกข้อมูลล่าสุด")
-            st.dataframe(df[['Timestamp', 'Case_ID', 'Risk_Level', 'Advice']].sort_values(by="Timestamp", ascending=False), 
-                         hide_index=True, use_container_width=True)
-    else:
-        st.info("ยังไม่มีข้อมูลในฐานข้อมูล")
+            st.divider()
+            c_left, c_right = st.columns([1, 1])
+            with c_left:
+                fig = px.pie(df, names='Risk_Level', color='Risk_Level',
+                             color_discrete_map={"🔴 High Risk": "#FF4B4B", "🟡 Moderate Risk": "#FFFF00", "🟢 Low Risk": "#28A745"})
+                st.plotly_chart(fig, use_container_width=True)
+            with c_right:
+                st.dataframe(df[['Timestamp', 'Case_ID', 'Risk_Level', 'Advice']].sort_values(by="Timestamp", ascending=False), 
+                             hide_index=True, use_container_width=True)
+        else:
+            st.info("ยังไม่มีข้อมูลในฐานข้อมูล")
+    except:
+        st.info("รอข้อมูลจากการบันทึกครั้งแรกเพื่อสร้าง Dashboard")
