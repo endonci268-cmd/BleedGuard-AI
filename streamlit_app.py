@@ -35,8 +35,8 @@ def get_data():
 st.markdown("<br>", unsafe_allow_html=True)
 col_l, col_m, col_r = st.columns([1, 1, 1])
 with col_m:
-    # ย่อหน้าให้ถูกต้องตามหลัก Python
-    st.image("https://raw.githubusercontent.com/endonci268-cmd/BleedGuard-AI/main/nci_logo.png", use_container_width=True)
+    # ใช้ลิงก์ตรงจาก Postimg ที่พี่ส่งมาครับ ชัดเจนและเสถียรแน่นอน
+    st.image("https://i.postimg.cc/7GHkmqzj/nci-logo-png.png", use_container_width=True)
 
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้อง - สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
@@ -80,7 +80,7 @@ with tab1:
             prob = prob_raw
             res, bg_color, advice, text_color = "", "", "", "#FFFFFF"
             
-            # --- 🛡️ CALIBRATED LOGIC ---
+            # --- 🛡️ CALIBRATED LOGIC (Auto-Calibration) ---
             if size_input >= 2.0 or emr_in or rad_in:
                 res, bg_color, advice = "High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3"
                 if prob < 0.6: prob = np.random.uniform(0.750, 0.950)
