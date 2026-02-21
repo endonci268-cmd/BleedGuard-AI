@@ -20,7 +20,7 @@ def load_trained_model():
 try:
     model = load_trained_model()
 except Exception as e:
-    st.error(f"⚠️ โหลดโมเดลไม่ได้: {e}")
+    st.error(f"⚠️ ไม่สามารถโหลดโมเดลได้: {e}")
     model = None
 
 # --- 2. GSHEETS CONNECTION ---
@@ -32,38 +32,47 @@ def get_data():
     except:
         return pd.DataFrame()
 
-# --- 3. UI: TABS ---
-tab1, tab2 = st.tabs(["🩺 ประเมินรายเคส", "📊 สรุปผลภาพรวม"])
+# --- 3. UI: LOGO & HEADER ---
+st.markdown("<br>", unsafe_allow_html=True)
+col_l, col_m, col_r = st.columns([1, 0.8, 1])
+with col_m:
+    # ดึงโลโก้จาก GitHub (ตรวจสอบให้แน่ใจว่าชื่อไฟล์ nci_logo.png ตรงกัน)
+    st.image("https://raw.githubusercontent.com/Aun-NCI/BleedGuard-AI/main/nci_logo.png", use_container_width=True)
+
+st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้อง - สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
+st.markdown("<hr>", unsafe_allow_html=True)
+
+# --- 4. TABS ---
+tab1, tab2 = st.tabs(["🩺 ประเมินรายเคส", "📊 ประวัติและ Dashboard"])
 
 with tab1:
-    st.title("🎗️ BleedGuard AI Triage")
-    st.info("ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้อง สถาบันมะเร็งแห่งชาติ")
-
-    with st.form("triage_form", clear_on_submit=True):
+    with st.form("triage_form", clear_on_submit=False):
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("### 📋 ข้อมูลผู้ป่วย")
-            case_id_input = st.text_input("รหัสผู้ป่วย (Case ID)", placeholder="NCI-XXX")
+            st.markdown("### 📋 ข้อมูลพื้นฐาน")
+            case_id_input = st.text_input("รหัสผู้ป่วย (Case ID)", placeholder="เช่น NCI-69001")
             age_input = st.number_input("อายุ (Age)", 0, 120, 60)
             sex_input = st.selectbox("เพศ (Sex)", [0, 1], format_func=lambda x: "หญิง" if x==0 else "ชาย")
             size_input = st.number_input("ขนาดติ่งเนื้อ (Size cm)", 0.0, 10.0, 1.0, step=0.1)
             loc_side = st.selectbox("ตำแหน่ง (Location)", ["Left Side", "Right Side"])
             med_in = st.checkbox("ใช้ยาละลายลิ่มเลือด (Medication)")
-            surg_in = st.checkbox("ประวัติผ่าตัดลำไส้ (Surgery)")
             
         with c2:
             st.markdown("### ✂️ หัตถการและประวัติ")
+            surg_in = st.checkbox("ประวัติผ่าตัดลำไส้ (Surgery)")
             rad_in = st.checkbox("ประวัติฉายแสง (Radiation)")
             chemo_in = st.checkbox("ประวัติเคมีบำบัด (Chemo)")
             bx_in = st.checkbox("Biopsy (BX)")
             cold_in = st.checkbox("Cold Snare Polypectomy")
             hot_in = st.checkbox("Hot Polypectomy")
             emr_in = st.checkbox("EMR")
-            clip_in = st.checkbox("มีการติด Hemoclip (Clip)")
+            clip_in = st.checkbox("ติด Hemoclip (Clip)")
 
-        submit = st.form_submit_button("🩺 ประมวลผลและบันทึกข้อมูล")
+        submit = st.form_submit_button("📊 เริ่มการประมวลผล AI")
 
     if submit and model is not None:
+        # เตรียมข้อมูล 12 features
         loc_right = 1 if loc_side == "Right Side" else 0
         features_list = [
             age_input, sex_input, size_input, loc_right, 
@@ -74,43 +83,59 @@ with tab1:
         input_array = np.array(features_list).reshape(1, -1)
         
         try:
+            # ทำนาย Probability
             prob = model.predict_proba(input_array)[0][1]
             
-            # --- Logic การคัดแยก ---
+            # --- 🛡️ IMPROVED LOGIC: Clinical-First Rule ---
+            res, bg_color, advice, text_color = "", "", "", "#FFFFFF"
+            
+            # 1. 🔴 กฎสีแดง (High Risk): ปัจจัยอันตรายชัดเจน (Clinical Priority)
             if size_input >= 2.0 or emr_in or rad_in:
-                res, bg_color, advice, text_color = "🔴 High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3", "#FFFFFF"
-            elif clip_in or prob > 0.12:
-                res, bg_color, advice, text_color = "🟡 Moderate Risk", "#FFFF00", "เฝ้าระวังต่อเนื่อง: โทรติดตามอาการในวันที่ 2", "#000000"
+                res, bg_color, advice = "High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3"
+            
+            # 2. 🟢 กฎสีเขียว (Low Risk): เคสปลอดภัยสูง (แก้ปัญหา AI เพี้ยน)
+            # เงื่อนไข: ขนาดเล็ก < 0.8 cm และทำ Cold Snare/BX และไม่มีปัจจัยเสี่ยงแดง/เหลือง
+            elif size_input < 0.8 and (cold_in or bx_in) and not med_in and not clip_in and not hot_in:
+                res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
+            
+            # 3. 🟡 กฎสีเหลือง (Moderate Risk): เคสที่มีปัจจัยเสี่ยงปานกลาง หรือ AI เตือน
+            elif clip_in or med_in or hot_in or size_input >= 1.0 or prob > 0.12:
+                res, bg_color, advice, text_color = "Moderate Risk", "#FFFF00", "เฝ้าระวังต่อเนื่อง: โทรติดตามอาการในวันที่ 2", "#000000"
+            
+            # 4. Fallback (สำหรับเคสที่เหลือ)
             else:
-                res, bg_color, advice, text_color = "🟢 Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำการสังเกตอาการด้วยตนเอง", "#FFFFFF"
+                res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
 
-            # --- Gauge Chart แสดงค่า Probability ---
+            # --- GAUGE CHART (ปรับให้สัมพันธ์กับ Risk) ---
             fig_gauge = go.Figure(go.Indicator(
                 mode = "gauge+number",
                 value = prob,
+                number = {'font': {'size': 80, 'color': "white"}, 'valueformat': '.3f'},
                 domain = {'x': [0, 1], 'y': [0, 1]},
-                title = {'text': "AI Risk Score"},
+                title = {'text': "AI Risk Score", 'font': {'size': 24, 'color': "white"}},
                 gauge = {
-                    'axis': {'range': [0, 1]},
-                    'bar': {'color': "black"},
+                    'axis': {'range': [0, 1], 'tickwidth': 1, 'tickcolor': "white"},
+                    'bar': {'color': "white", 'thickness': 0.2},
+                    'bgcolor': "rgba(0,0,0,0)",
                     'steps': [
-                        {'range': [0, 0.12], 'color': "green"},
-                        {'range': [0.12, 0.5], 'color': "yellow"},
-                        {'range': [0.5, 1], 'color': "red"}]
+                        {'range': [0, 0.12], 'color': "#28A745"},
+                        {'range': [0.12, 0.5], 'color': "#FFFF00"},
+                        {'range': [0.5, 1], 'color': "#FF0000"}]
                 }
             ))
-            fig_gauge.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20))
+            fig_gauge.update_layout(paper_bgcolor="#111111", height=380, margin=dict(l=30, r=30, t=80, b=30))
             st.plotly_chart(fig_gauge, use_container_width=True)
 
-            # --- ผลการประเมิน ---
+            # --- RESULT BOX ---
+            icon = "🔴" if "High" in res else ("🟡" if "Moderate" in res else "🟢")
             st.markdown(f"""
-                <div style="background-color:{bg_color}; padding:30px; border-radius:15px; text-align:center; border: 2px solid #333;">
-                    <h1 style="color:{text_color}; margin:0;">{res}</h1>
-                    <p style="color:{text_color}; font-size:20px; font-weight:bold;">{advice}</p>
+                <div style="background-color:{bg_color}; padding:40px; border-radius:15px; text-align:center; border: 2px solid #333; margin-top: -20px;">
+                    <h1 style="color:{text_color}; margin:0; font-size:55px;">{icon} {res}</h1>
+                    <p style="color:{text_color}; font-size:26px; font-weight:bold; margin-top:10px;">{advice}</p>
                 </div>
             """, unsafe_allow_html=True)
 
-            # --- บันทึกข้อมูล ---
+            # --- SAVE DATA ---
             current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
             new_row = pd.DataFrame([{
                 "Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input, 
@@ -120,32 +145,18 @@ with tab1:
                 "Clip": int(clip_in), "Risk_Level": res, "Advice": advice
             }])
             
-            updated_df = pd.concat([get_data(), new_row], ignore_index=True)
+            df_old = get_data()
+            updated_df = pd.concat([df_old, new_row], ignore_index=True)
             conn.update(worksheet="Sheet1", data=updated_df)
-            st.success(f"บันทึกข้อมูลเคส {case_id_input} ลงฐานข้อมูลแล้ว")
+            st.toast(f"บันทึกข้อมูลสำเร็จ: {case_id_input}")
                 
         except Exception as e:
-            st.error(f"AI ประมวลผลผิดพลาด: {e}")
+            st.error(f"❌ ระบบขัดข้อง: {e}")
 
 with tab2:
-    st.header("📈 สถิติการคัดกรอง")
+    st.header("📊 รายการบันทึกย้อนหลัง")
     df = get_data()
     if not df.empty:
-        # Metrics
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("เคสทั้งหมด", len(df))
-        c2.metric("🔴 เสี่ยงสูง", len(df[df['Risk_Level'].str.contains("🔴")]))
-        c3.metric("🟡 เสี่ยงปานกลาง", len(df[df['Risk_Level'].str.contains("🟡")]))
-        c4.metric("🟢 ปกติ", len(df[df['Risk_Level'].str.contains("🟢")]))
-
-        # กราฟ
-        col_a, col_b = st.columns(2)
-        with col_a:
-            fig_pie = px.pie(df, names='Risk_Level', color='Risk_Level', hole=0.4,
-                             color_discrete_map={"🔴 High Risk": "#FF4B4B", "🟡 Moderate Risk": "#FFFF00", "🟢 Low Risk": "#28A745"})
-            st.plotly_chart(fig_pie)
-        with col_b:
-            st.subheader("5 เคสล่าสุด")
-            st.table(df[['Case_ID', 'Risk_Level', 'Timestamp']].tail(5))
+        st.dataframe(df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
     else:
-        st.info("ยังไม่มีข้อมูลเพื่อแสดงผล")
+        st.info("ยังไม่มีข้อมูลบันทึกในฐานข้อมูล")
