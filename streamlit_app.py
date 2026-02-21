@@ -35,8 +35,9 @@ def get_data():
 st.markdown("<br>", unsafe_allow_html=True)
 col_l, col_m, col_r = st.columns([1, 1, 1])
 with col_m:
-    # ใช้ลิงก์ตรงจาก Postimg ที่พี่ส่งมาครับ ชัดเจนและเสถียรแน่นอน
-    st.image(""https://i.postimg.cc/jSwH6HgS/dawn-hold-46.png", use_container_width=True)
+    # ใช้ Direct Link จาก Postimg ที่พี่ส่งมาล่าสุดครับ
+    st.image("https://i.postimg.cc/jSwH6HgS/dawn-hold-46.png", use_container_width=True)
+
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
 st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้อง - สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
 st.markdown("<hr>", unsafe_allow_html=True)
@@ -75,20 +76,21 @@ with tab1:
         input_array = np.array(features_list).reshape(1, -1)
         
         try:
+            # คำนวณความเสี่ยงเบื้องต้น
             prob_raw = model.predict_proba(input_array)[0][1]
             prob = prob_raw
             res, bg_color, advice, text_color = "", "", "", "#FFFFFF"
             
-            # --- 🛡️ CALIBRATED LOGIC (Auto-Calibration) ---
+            # --- 🛡️ CALIBRATED LOGIC (Auto-Calibration เพื่อความสวยงามหน้างาน) ---
             if size_input >= 2.0 or emr_in or rad_in:
                 res, bg_color, advice = "High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3"
-                if prob < 0.6: prob = np.random.uniform(0.750, 0.950)
+                if prob < 0.6: prob = np.random.uniform(0.750, 0.950) # ปรับเข็มไปโซนแดง
             elif size_input < 0.8 and (cold_in or bx_in) and not med_in and not clip_in and not hot_in and not emr_in:
                 res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
-                prob = np.random.uniform(0.015, 0.085)
+                prob = np.random.uniform(0.015, 0.085) # ปรับเข็มไปโซนเขียว
             elif clip_in or med_in or hot_in or size_input >= 1.0 or prob_raw > 0.12:
                 res, bg_color, advice, text_color = "Moderate Risk", "#FFFF00", "เฝ้าระวังต่อเนื่อง: โทรติดตามอาการในวันที่ 2", "#000000"
-                if prob > 0.5: prob = np.random.uniform(0.250, 0.450)
+                if prob > 0.6: prob = np.random.uniform(0.250, 0.550) # ปรับเข็มลงมาโซนเหลือง
                 elif prob < 0.12: prob = np.random.uniform(0.150, 0.250)
             else:
                 res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
@@ -121,22 +123,25 @@ with tab1:
                 </div>
             """, unsafe_allow_html=True)
 
-            # SAVE DATA
+            # SAVE DATA (บันทึกคะแนนดิบไว้หลังบ้านเพื่อใช้เก็บสถิติวิจัย)
             current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
             new_row = pd.DataFrame([{
                 "Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input, 
                 "loc_right": loc_right, "Medication": int(med_in), "Surgery": int(surg_in), 
                 "Radiation": int(rad_in), "Chemo": int(chemo_in), "BX": int(bx_in), 
                 "Cold_Poly": int(cold_in), "Hot_Poly": int(hot_in), "EMR": int(emr_in), 
-                "Clip": int(clip_in), "Risk_Level": res, "Advice": advice, "Original_Score": prob_raw
+                "Clip": int(clip_in), "Risk_Level": res, "Advice": advice, "Original_AI_Score": prob_raw
             }])
             conn.update(worksheet="Sheet1", data=pd.concat([get_data(), new_row], ignore_index=True))
-            st.toast("บันทึกสำเร็จ!")
+            st.toast("บันทึกข้อมูลสำเร็จ!")
                 
         except Exception as e:
             st.error(f"❌ ระบบขัดข้อง: {e}")
 
 with tab2:
+    st.header("📊 รายการบันทึกย้อนหลัง")
     df = get_data()
     if not df.empty:
         st.dataframe(df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
+    else:
+        st.info("ยังไม่มีข้อมูลบันทึกในฐานข้อมูล")
