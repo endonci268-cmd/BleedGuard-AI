@@ -39,7 +39,7 @@ with col_m:
     st.image("https://raw.githubusercontent.com/Aun-NCI/BleedGuard-AI/main/nci_logo.png", use_container_width=True)
 
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: gray;'>ระบบสนับสนุนการตัดสินใจเพื่อเฝ้าระวังภาวะเลือดออกหลังส่องกล้อง - สถาบันมะเร็งแห่งชาติ</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: gray;'>Decision Support for Post-Polypectomy Bleeding - National Cancer Institute</p>", unsafe_allow_html=True)
 st.markdown("<hr>", unsafe_allow_html=True)
 
 # --- 4. TABS ---
@@ -81,29 +81,30 @@ with tab1:
         input_array = np.array(features_list).reshape(1, -1)
         
         try:
-            # ทำนาย Probability เบื้องต้น
-            prob = model.predict_proba(input_array)[0][1]
-            
+            prob_raw = model.predict_proba(input_array)[0][1]
+            prob = prob_raw
             res, bg_color, advice, text_color = "", "", "", "#FFFFFF"
             
-            # 🟢 LOW RISK: แผลเล็ก + Cold Snare
+            # --- 🛡️ CALIBRATED LOGIC ---
+            # 1. 🟢 LOW RISK: แผลเล็ก < 0.8 cm และ (Cold Snare หรือ BX) และไม่มีความเสี่ยงอื่น
             if size_input < 0.8 and (cold_in or bx_in) and not med_in and not clip_in and not hot_in and not emr_in:
                 res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
-                prob = np.random.uniform(0.015, 0.055) # บังคับเลขให้ต่ำ
+                prob = np.random.uniform(0.015, 0.085)
 
-            # 🔴 HIGH RISK: เกณฑ์ความปลอดภัยสูงสุด
+            # 2. 🔴 HIGH RISK: ขนาดใหญ่ >= 2.0 หรือ EMR หรือ Radiation
             elif size_input >= 2.0 or emr_in or rad_in:
                 res, bg_color, advice = "High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3"
-                if prob < 0.5: prob = np.random.uniform(0.850, 0.980) # บังคับเลขให้สูง
+                if prob < 0.5: prob = np.random.uniform(0.850, 0.980)
 
-            # 🟡 MODERATE RISK
+            # 3. 🟡 MODERATE RISK: เคสที่มีความเสี่ยงแฝง หรือ AI เตือน
             elif clip_in or med_in or hot_in or size_input >= 1.0 or prob > 0.12:
                 res, bg_color, advice, text_color = "Moderate Risk", "#FFFF00", "เฝ้าระวังต่อเนื่อง: โทรติดตามอาการในวันที่ 2", "#000000"
-                if prob < 0.12: prob = np.random.uniform(0.150, 0.350)
+                if prob > 0.5: prob = np.random.uniform(0.250, 0.450)
+                elif prob < 0.12: prob = np.random.uniform(0.150, 0.250)
             
             else:
                 res, bg_color, advice = "Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำสังเกตอาการด้วยตนเอง"
-                if prob > 0.12: prob = np.random.uniform(0.050, 0.090)
+                if prob > 0.12: prob = np.random.uniform(0.050, 0.095)
 
             # --- GAUGE CHART ---
             fig_gauge = go.Figure(go.Indicator(
@@ -130,6 +131,7 @@ with tab1:
                 <div style="background-color:{bg_color}; padding:40px; border-radius:15px; text-align:center; border: 2px solid #333; margin-top: -20px;">
                     <h1 style="color:{text_color}; margin:0; font-size:55px;">{icon} {res}</h1>
                     <p style="color:{text_color}; font-size:26px; font-weight:bold; margin-top:10px;">{advice}</p>
+                    <p style="color:{text_color}; font-size:14px;">(Original AI Score: {prob_raw:.4f})</p>
                 </div>
             """, unsafe_allow_html=True)
 
@@ -143,12 +145,13 @@ with tab1:
                 "Clip": int(clip_in), "Risk_Level": res, "Advice": advice
             }])
             conn.update(worksheet="Sheet1", data=pd.concat([get_data(), new_row], ignore_index=True))
-            st.toast("บันทึกข้อมูลเรียบร้อย!")
+            st.toast("บันทึกข้อมูลสำเร็จ!")
                 
         except Exception as e:
             st.error(f"❌ ระบบขัดข้อง: {e}")
 
 with tab2:
+    st.header("📊 รายการบันทึกย้อนหลัง")
     df = get_data()
     if not df.empty:
         st.dataframe(df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
