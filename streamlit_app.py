@@ -94,7 +94,7 @@ with tab1:
         # บันทึกลง Google Sheets
         current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
         new_row = pd.DataFrame([{
-            "Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input, 
+            "Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size_cm": size_input, 
             "loc_right": loc_right, "BX": int(bx_in), "Cold_Poly": int(cold_in), 
             "Hot_Poly": int(hot_in), "EMR": int(emr_in), "Clip": int(clip_in), "Medication": int(med_in), 
             "Surgery": int(surg_in), "Radiation": int(rad_in), "Chemo": int(chemo_in), "Risk_Level": res, "Advice": advice
