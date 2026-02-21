@@ -94,4 +94,63 @@ with tab1:
                 res, bg_color, advice = "🔴 High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3"
             # 🟡 กฎสีเหลือง (AI Threshold 0.12 หรือติดคลิป)
             elif clip_in or prob > 0.12:
-                res, bg_color, advice, text_color = "🟡
+                res, bg_color, advice, text_color = "🟡 Moderate Risk", "#FFFF00", "เฝ้าระวังต่อเนื่อง: โทรติดตามอาการในวันที่ 2", "#000000"
+            # 🟢 กฎสีเขียว
+            else:
+                res, bg_color, advice = "🟢 Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำการสังเกตอาการด้วยตนเอง"
+
+            # --- C. แสดงผลหน้าจอ ---
+            st.markdown(f"""
+                <div style="background-color:{bg_color}; padding:40px; border-radius:10px; text-align:center; margin-top:20px; border: 2px solid #333;">
+                    <h1 style="color:{text_color}; margin:0; font-size:45px;">{res}</h1>
+                    <p style="color:{text_color}; font-size:22px; font-weight:bold; white-space: pre-line;">{advice}</p>
+                    <p style="color:{text_color}; font-size:16px;">AI Score: {prob:.4f}</p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            # --- D. บันทึกลง GOOGLE SHEETS (17 คอลัมน์) ---
+            current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
+            new_row = pd.DataFrame([{
+                "Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input, 
+                "loc_right": loc_right, "Medication": int(med_in), "Surgery": int(surg_in), 
+                "Radiation": int(rad_in), "Chemo": int(chemo_in), "BX": int(bx_in), 
+                "Cold_Poly": int(cold_in), "Hot_Poly": int(hot_in), "EMR": int(emr_in), 
+                "Clip": int(clip_in), "Risk_Level": res, "Advice": advice
+            }])
+            
+            try:
+                df_old = get_data()
+                updated_df = pd.concat([df_old, new_row], ignore_index=True)
+                conn.update(worksheet="Sheet1", data=updated_df)
+                st.toast(f"บันทึกข้อมูลสำเร็จเมื่อ {current_time}")
+            except Exception as e:
+                st.error(f"⚠️ ไม่สามารถบันทึกข้อมูลลง Sheets ได้: {e}")
+                
+        except Exception as e:
+            # ถ้ายัง Error เรื่องจำนวนปัจจัย ระบบจะบอกทันทีว่า AI ต้องการกี่ตัว
+            st.error(f"AI Error: โมเดลนี้ต้องการปัจจัยไม่เท่ากับ 12 ตัว (โปรดตรวจสอบ Colab)")
+            st.write(f"รายละเอียด: {e}")
+
+with tab2:
+    st.header("📊 แดชบอร์ดสรุปผลการคัดกรอง")
+    try:
+        df = get_data()
+        if not df.empty:
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("เคสสะสมทั้งหมด", len(df))
+            m2.metric("🔴 เสี่ยงสูง", len(df[df['Risk_Level'].str.contains("🔴")]))
+            m3.metric("🟡 เสี่ยงปานกลาง", len(df[df['Risk_Level'].str.contains("🟡")]))
+            m4.metric("🟢 เสี่ยงต่ำ", len(df[df['Risk_Level'].str.contains("🟢")]))
+            
+            st.divider()
+            c_l, c_r = st.columns([1, 1])
+            with c_l:
+                fig = px.pie(df, names='Risk_Level', color='Risk_Level',
+                             color_discrete_map={"🔴 High Risk": "#FF4B4B", "🟡 Moderate Risk": "#FFFF00", "🟢 Low Risk": "#28A745"})
+                st.plotly_chart(fig, use_container_width=True)
+            with c_r:
+                st.dataframe(df[['Timestamp', 'Case_ID', 'Risk_Level']].sort_values(by="Timestamp", ascending=False), hide_index=True)
+        else:
+            st.info("รอการบันทึกข้อมูลเคสแรก")
+    except:
+        st.info("ระบบกำลังเตรียมข้อมูล Dashboard...")
