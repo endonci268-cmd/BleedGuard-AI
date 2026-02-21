@@ -13,14 +13,16 @@ tz_th = pytz.timezone('Asia/Bangkok')
 
 # --- 1. LOAD MODEL ---
 @st.cache_resource
-def load_model():
-    # แก้ไขชื่อไฟล์ให้ตรงกับที่พี่อัปโหลดขึ้น GitHub ล่าสุด
+def load_trained_model():
+    # โหลดไฟล์โมเดลชื่อล่าสุดที่พี่อัปโหลดขึ้น GitHub
     return joblib.load('bleedguard_stack_model.pkl')
 
+# เรียกใช้งานฟังก์ชันและเก็บไว้ในตัวแปร model เพื่อใช้ทั่วทั้งแอป
 try:
-    model = load_model()
+    model = load_trained_model()
 except Exception as e:
     st.error(f"⚠️ ไม่พบไฟล์โมเดล 'bleedguard_stack_model.pkl' ใน GitHub: {e}")
+    model = None
 
 # --- 2. GSHEETS CONNECTION ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -62,27 +64,18 @@ with tab1:
 
         submit = st.form_submit_button("ประเมินผลและบันทึกข้อมูล")
 
-    if submit:
-        # --- A. เตรียมข้อมูล (เรียงลำดับตาม Colab 12 ปัจจัย) ---
+    if submit and model is not None:
+        # --- A. เตรียมข้อมูล (12 ปัจจัย เรียงตามลำดับ Colab) ---
         loc_right = 1 if loc_side == "Right Side" else 0
         
-        # 🚨 ลำดับสำคัญมาก: ต้องตรงกับ model.feature_names_in_ จาก Colab
+        # ลำดับต้องเป๊ะ: age, sex, size, loc, emr, bx, cold, hot, rad, chemo, surg, med
         features_list = [
-            age_input,          # 'age'
-            sex_input,          # 'sex'
-            size_input,         # 'size_cm'
-            loc_right,          # 'loc_right'
-            int(emr_in),        # 'emr'
-            int(bx_in),         # 'bx'
-            int(cold_in),       # 'cold_snare'
-            int(hot_in),        # 'hot_poly'
-            int(rad_in),        # 'radiation'
-            int(chemo_in),      # 'chemo'
-            int(surg_in),       # 'surgery'
-            int(med_in)         # 'med_risk'
+            age_input, sex_input, size_input, loc_right, 
+            int(emr_in), int(bx_in), int(cold_in), int(hot_in), 
+            int(rad_in), int(chemo_in), int(surg_in), int(med_in)
         ]
         
-        # แปลงเป็น Numpy Array เพื่อข้ามปัญหาเรื่องชื่อคอลัมน์กวนใจ
+        # แปลงเป็น Numpy Array เพื่อข้ามการเช็คชื่อ 'lr_pred' หรือ 'xgb_pred'
         input_array = np.array(features_list).reshape(1, -1)
         
         try:
@@ -92,13 +85,10 @@ with tab1:
             # --- B. NEW LOGIC (Sensitivity 100%) ---
             res, bg_color, advice, text_color = "", "", "", "#FFFFFF"
             
-            # 🔴 กฎสีแดง (Clinical Override)
             if size_input >= 2.0 or emr_in or rad_in:
                 res, bg_color, advice = "🔴 High Risk", "#FF4B4B", "เฝ้าระวังเข้มงวด: โทรติดตามอาการวันที่ 1, 2 และ 3"
-            # 🟡 กฎสีเหลือง (AI Threshold 0.12 หรือมีการติดคลิป)
             elif clip_in or prob > 0.12:
                 res, bg_color, advice, text_color = "🟡 Moderate Risk", "#FFFF00", "เฝ้าระวังต่อเนื่อง: โทรติดตามอาการในวันที่ 2", "#000000"
-            # 🟢 กฎสีเขียว
             else:
                 res, bg_color, advice = "🟢 Low Risk", "#28A745", "ไม่ต้องโทรติดตาม: ให้คำแนะนำการสังเกตอาการด้วยตนเอง"
 
@@ -111,7 +101,7 @@ with tab1:
                 </div>
             """, unsafe_allow_html=True)
 
-            # --- D. บันทึกข้อมูลลง Google Sheets (17 คอลัมน์) ---
+            # --- D. บันทึกลง GOOGLE SHEETS (17 คอลัมน์) ---
             current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
             new_row = pd.DataFrame([{
                 "Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input, 
@@ -124,17 +114,17 @@ with tab1:
             df_old = get_data()
             updated_df = pd.concat([df_old, new_row], ignore_index=True)
             conn.update(worksheet="Sheet1", data=updated_df)
-            st.toast(f"บันทึกข้อมูลเคส {case_id_input} สำเร็จ!")
+            st.toast(f"บันทึกเคส {case_id_input} สำเร็จ!")
                 
         except Exception as e:
             st.error(f"❌ AI ประมวลผลไม่ได้: {e}")
-            st.info("คำแนะนำ: หากขึ้น 'expecting 2 features' แสดงว่าโมเดลยังไม่ได้รวมร่างแบบ StackingClassifier ใน Colab ครับ")
+            if "expecting 2 features" in str(e).lower():
+                st.warning("คำแนะนำ: โมเดลนี้ต้องการผลทายจากโมเดลย่อย (LR/XGB) 2 ค่า พี่ต้องใช้โมเดลแบบรวมร่าง (StackingClassifier) จาก Colab ครับ")
 
 with tab2:
     st.header("📊 Dashboard & Database")
     df = get_data()
     if not df.empty:
-        # Metrics สรุปผล
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("เคสสะสม", len(df))
         m2.metric("🔴 High Risk", len(df[df['Risk_Level'].str.contains("🔴")]))
@@ -142,17 +132,14 @@ with tab2:
         m4.metric("🟢 Low Risk", len(df[df['Risk_Level'].str.contains("🟢")]))
         
         st.divider()
-        
         c_left, c_right = st.columns([1, 1])
         with c_left:
-            fig = px.pie(df, names='Risk_Level', title="สัดส่วนระดับความเสี่ยง",
+            fig = px.pie(df, names='Risk_Level', title="ระดับความเสี่ยงรายเคส",
                          color='Risk_Level', color_discrete_map={
                              "🔴 High Risk": "#FF4B4B", "🟡 Moderate Risk": "#FFFF00", "🟢 Low Risk": "#28A745"
                          })
             st.plotly_chart(fig, use_container_width=True)
-            
         with c_right:
-            st.subheader("📋 ประวัติล่าสุด")
-            st.dataframe(df[['Timestamp', 'Case_ID', 'Risk_Level']].sort_values(by="Timestamp", ascending=False), hide_index=True)
+            st.dataframe(df[['Timestamp', 'Case_ID', 'Risk_Level']].sort_values(by="Timestamp", ascending=False), use_container_width=True)
     else:
-        st.info("ยังไม่มีข้อมูลในระบบฐานข้อมูล")
+        st.info("รอข้อมูลจากการบันทึก...")
