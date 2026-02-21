@@ -36,7 +36,7 @@ def get_data():
 st.markdown("<br>", unsafe_allow_html=True)
 col_l, col_m, col_r = st.columns([1, 1, 1])
 with col_m:
-    logo_url = "https://i.postimg.cc/7GHkmqzj/nci-logo-png."
+    logo_url = "https://i.postimg.cc/nz7hVzhV/nci-logo-png.png"
     st.image(logo_url, use_container_width=True)
 
 st.markdown("<h2 style='text-align: center; margin-bottom: 0;'>BleedGuard AI Triage System</h2>", unsafe_allow_html=True)
