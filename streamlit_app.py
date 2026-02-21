@@ -14,6 +14,7 @@ tz_th = pytz.timezone('Asia/Bangkok')
 # --- 1. LOAD MODEL ---
 @st.cache_resource
 def load_model():
+    # ตรวจสอบชื่อไฟล์ใน GitHub ให้ตรงกับ bleedguard_model.pkl นะครับ
     return joblib.load('bleedguard_model.pkl')
 
 try:
@@ -25,7 +26,10 @@ except Exception as e:
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data():
-    return conn.read(worksheet="Sheet1", ttl="0")
+    try:
+        return conn.read(worksheet="Sheet1", ttl="0")
+    except:
+        return pd.DataFrame()
 
 # --- 3. UI: TABS ---
 tab1, tab2 = st.tabs(["🩺 ระบบประเมินความเสี่ยง", "📊 Dashboard & Database"])
@@ -59,10 +63,10 @@ with tab1:
         submit = st.form_submit_button("ประเมินผลและบันทึกข้อมูล")
 
     if submit:
-        # --- A. เตรียมข้อมูล (เรียงลำดับตาม Colab เป๊ะๆ) ---
+        # --- A. เตรียมข้อมูล (เรียงลำดับตามที่พี่แจ้งจาก Colab) ---
         loc_right = 1 if loc_side == "Right Side" else 0
         
-        # 🚨 แก้ไขลำดับที่นี่ตามที่พี่แจ้งมาจาก Colab
+        # 🚨 เรียงลำดับ 12 ปัจจัยตามหน้างาน AI ที่พี่แจ้งมาเป๊ะๆ
         features_list = [
             age_input,          # 'age'
             sex_input,          # 'sex'
@@ -78,15 +82,12 @@ with tab1:
             int(med_in)         # 'med_risk'
         ]
         
-        # ส่งเป็น DataFrame พร้อมระบุชื่อคอลัมน์ให้ตรงเป๊ะ (วิธีนี้ชัวร์ที่สุด)
-        input_df = pd.DataFrame([features_list], columns=[
-            'age', 'sex', 'size_cm', 'loc_right', 'emr', 'bx', 'cold_snare', 
-            'hot_poly', 'radiation', 'chemo', 'surgery', 'med_risk'
-        ])
+        # 🌟 ไม้ตาย: แปลงเป็น Numpy Array เพื่อข้ามการเช็คชื่อ 'lr_pred' หรือ 'xgb_pred'
+        input_array = np.array(features_list).reshape(1, -1)
         
         try:
-            # ทำนาย AI Probability
-            prob = model.predict_proba(input_df)[0][1]
+            # ทำนาย AI Probability (ส่งเป็นข้อมูลดิบ)
+            prob = model.predict_proba(input_array)[0][1]
             
             # --- B. NEW LOGIC (Sensitivity 100%) ---
             res, bg_color, advice, text_color = "", "", "", "#FFFFFF"
@@ -107,7 +108,7 @@ with tab1:
                 </div>
             """, unsafe_allow_html=True)
 
-            # --- D. บันทึก (17 คอลัมน์) ---
+            # --- D. บันทึก (17 คอลัมน์ลง Google Sheets) ---
             current_time = datetime.now(tz_th).strftime("%Y-%m-%d %H:%M:%S")
             new_row = pd.DataFrame([{
                 "Timestamp": current_time, "Case_ID": case_id_input, "Age": age_input, "Sex": sex_input, "Size": size_input, 
@@ -117,14 +118,18 @@ with tab1:
                 "Clip": int(clip_in), "Risk_Level": res, "Advice": advice
             }])
             
-            conn.update(worksheet="Sheet1", data=pd.concat([get_data(), new_row], ignore_index=True))
-            st.toast("บันทึกข้อมูลเรียบร้อย!")
+            df_old = get_data()
+            updated_df = pd.concat([df_old, new_row], ignore_index=True)
+            conn.update(worksheet="Sheet1", data=updated_df)
+            st.toast("บันทึกข้อมูลสำเร็จ!")
                 
         except Exception as e:
-            st.error(f"AI Error: {e}")
+            st.error(f"AI ประมวลผลไม่ได้ (อาจเพราะจำนวนปัจจัยไม่ตรง): {e}")
 
 with tab2:
     st.header("📊 Dashboard")
     df = get_data()
     if not df.empty:
-        st.dataframe(df.sort_values(by="Timestamp", ascending=False))
+        st.dataframe(df.sort_values(by="Timestamp", ascending=False), use_container_width=True)
+    else:
+        st.info("ยังไม่มีข้อมูลบันทึกในระบบ")
